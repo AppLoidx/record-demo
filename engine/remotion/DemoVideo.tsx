@@ -1,16 +1,103 @@
 import {
   AbsoluteFill,
+  Sequence,
   staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { assertTimeline, type Timeline } from "../lib/timeline";
+import {
+  assertTimeline,
+  type Timeline,
+  type TimelineEvent,
+} from "../lib/timeline";
 import { Background } from "./Background";
-import { Captions } from "./Captions";
+import { Caption } from "./Captions";
 import { Outro, resolveOutro } from "./Outro";
 import { Screen, type WindowChrome } from "./Screen";
-import { captureViewport, demoTheme } from "./theme";
+import {
+  SpotlightEvent,
+  spotlightTotalDuration,
+} from "./Spotlight";
+import {
+  captureViewport,
+  demoTheme,
+  msToFrame,
+  msToFrames,
+} from "./theme";
 import { resolveCameraTransform } from "./zoom";
+
+type CaptionEvent = Extract<TimelineEvent, { kind: "caption" }>;
+type SpotlightTimelineEvent = Extract<TimelineEvent, { kind: "spotlight" }>;
+type ZoomEvent = Extract<TimelineEvent, { kind: "zoom" }>;
+type OutroEvent = Extract<TimelineEvent, { kind: "outro" }>;
+
+type TimedTrack<T extends TimelineEvent> = {
+  name: string;
+  from: number;
+  durationInFrames: number;
+  event: T;
+};
+
+export function buildStudioTracks(
+  timeline: Timeline,
+  fps: number,
+  durationInFrames: number,
+) {
+  const timedTrack = <T extends TimelineEvent>(
+    event: T,
+    name: string,
+    durationMs: number,
+  ): TimedTrack<T> => ({
+    name,
+    from: msToFrame(event.t, fps),
+    durationInFrames: msToFrames(durationMs, fps),
+    event,
+  });
+  const captions = timeline.events
+    .filter((event): event is CaptionEvent => event.kind === "caption")
+    .map((event) =>
+      timedTrack(
+        event,
+        `Caption: "${event.text.slice(0, 28)}"`,
+        event.durationMs,
+      ),
+    );
+  const spotlights = timeline.events
+    .filter(
+      (event): event is SpotlightTimelineEvent => event.kind === "spotlight",
+    )
+    .map((event) =>
+      timedTrack(event, "Spotlight", spotlightTotalDuration(event)),
+    );
+  const zooms = timeline.events
+    .filter((event): event is ZoomEvent => event.kind === "zoom")
+    .map((event) =>
+      timedTrack(
+        event,
+        `Zoom ${event.rect === null ? "out" : "in"}`,
+        event.durationMs,
+      ),
+    );
+  const outroEvent = timeline.events.find(
+    (event): event is OutroEvent => event.kind === "outro",
+  );
+  const outroFrom = outroEvent ? msToFrame(outroEvent.t, fps) : 0;
+
+  return {
+    screen: { name: "Screen", from: 0, durationInFrames },
+    captions,
+    spotlights,
+    zooms,
+    outro: outroEvent
+      ? {
+          name: `Outro: "${outroEvent.title}"`,
+          from: outroFrom,
+          durationInFrames: Math.max(1, durationInFrames - outroFrom),
+          event: outroEvent,
+        }
+      : undefined,
+  };
+}
 
 export type DemoVideoProps = {
   timeline: Timeline;
@@ -137,7 +224,7 @@ function FontFaces() {
 export function DemoVideo(props: DemoVideoProps) {
   assertDemoVideoProps(props);
   const frame = useCurrentFrame();
-  const { fps, width, height } = useVideoConfig();
+  const { fps, width, height, durationInFrames } = useVideoConfig();
   const layout = layoutFor(width, height, props.windowChrome);
   const camera = resolveCameraTransform(
     props.timeline,
@@ -157,6 +244,7 @@ export function DemoVideo(props: DemoVideoProps) {
     1 - outro.progress * (1 - demoTheme.outro.recedeScale);
   const screenOpacity =
     1 - outro.progress * (1 - demoTheme.outro.screenOpacity);
+  const tracks = buildStudioTracks(props.timeline, fps, durationInFrames);
 
   return (
     <AbsoluteFill
@@ -167,38 +255,94 @@ export function DemoVideo(props: DemoVideoProps) {
     >
       <FontFaces />
       <Background />
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: layout.top,
-          transform: "translateX(-50%)",
-        }}
+      <Sequence
+        name={tracks.screen.name}
+        from={tracks.screen.from}
+        durationInFrames={tracks.screen.durationInFrames}
+        layout="none"
       >
         <div
           style={{
-            opacity: screenOpacity,
-            transform: `scale(${outroScale})`,
-            willChange: "transform, opacity",
+            position: "absolute",
+            left: "50%",
+            top: layout.top,
+            transform: "translateX(-50%)",
           }}
         >
-          <Screen
-            width={layout.screenWidth}
-            height={layout.screenHeight}
-            radius={radius}
-            chrome={props.windowChrome}
-            chromeHeight={layout.chromeHeight}
-            timeline={props.timeline}
-            videoSrc={videoSrc}
-            camera={camera}
-            showCursor={!outro.started}
-          />
+          <div
+            style={{
+              opacity: screenOpacity,
+              transform: `scale(${outroScale})`,
+              willChange: "transform, opacity",
+            }}
+          >
+            <Screen
+              width={layout.screenWidth}
+              height={layout.screenHeight}
+              radius={radius}
+              chrome={props.windowChrome}
+              chromeHeight={layout.chromeHeight}
+              timeline={props.timeline}
+              videoSrc={videoSrc}
+              camera={camera}
+              showCursor={!outro.started}
+            >
+              {tracks.spotlights.map((track, index) => (
+                <Sequence
+                  key={`spotlight-${index}`}
+                  name={track.name}
+                  from={track.from}
+                  durationInFrames={track.durationInFrames}
+                  layout="none"
+                >
+                  <SpotlightEvent
+                    timeline={props.timeline}
+                    spotlight={track.event}
+                  />
+                </Sequence>
+              ))}
+            </Screen>
+          </div>
         </div>
-      </div>
-      {outro.started ? null : (
-        <Captions timeline={props.timeline} bottom={layout.captionBottom} />
-      )}
-      <Outro outro={outro} frameWidth={width} />
+      </Sequence>
+      {tracks.captions.map((track, index) => (
+        <Sequence
+          key={`caption-${index}`}
+          name={track.name}
+          from={track.from}
+          durationInFrames={track.durationInFrames}
+          layout="none"
+        >
+          {outro.started ? null : (
+            <Caption
+              timeline={props.timeline}
+              caption={track.event}
+              bottom={layout.captionBottom}
+            />
+          )}
+        </Sequence>
+      ))}
+      {tracks.zooms.map((track, index) => (
+        <Sequence
+          key={`zoom-${index}`}
+          name={track.name}
+          from={track.from}
+          durationInFrames={track.durationInFrames}
+          layout="none"
+        >
+          {null}
+        </Sequence>
+      ))}
+      {tracks.outro ? (
+        <Sequence
+          name={tracks.outro.name}
+          from={tracks.outro.from}
+          durationInFrames={tracks.outro.durationInFrames}
+          layout="none"
+        >
+          <Outro outro={outro} frameWidth={width} />
+        </Sequence>
+      ) : null}
     </AbsoluteFill>
   );
 }
