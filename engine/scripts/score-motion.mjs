@@ -2,8 +2,18 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { registerHooks } from "node:module";
-import { parseTimeline } from "../lib/timeline.ts";
+import { cursorPositionFromPoints } from "../lib/cursor-position.ts";
+import {
+  parseTimeline,
+  spotlightTotalDuration,
+} from "../lib/timeline.ts";
 
+// Static stretches at or above this duration read as dead air.
+const DEAD_AIR_THRESHOLD_MS = 3_500;
+// Cursor travel below this CSS-pixel distance still reads as static.
+const DEAD_AIR_CURSOR_TRAVEL_PX = 40;
+// A quiet final beat this short is intentional rather than dead air.
+const DEAD_AIR_END_EXEMPTION_MS = 1_000;
 const FPS = 60;
 const FRAME_WIDTH = 2560;
 const FRAME_HEIGHT = 1440;
@@ -192,6 +202,89 @@ export function scoreCameraSeries(
   return { metrics, perMove, verdict };
 }
 
+function eventEnd(event) {
+  if (event.kind === "spotlight") {
+    return event.t + spotlightTotalDuration(event);
+  }
+  if (event.kind === "zoom") {
+    return (
+      event.t + Math.max(demoTheme.zoom.minimumDurationMs, event.durationMs)
+    );
+  }
+  return "durationMs" in event ? event.t + event.durationMs : undefined;
+}
+
+function cursorTravel(cursorPoints, startMs, endMs) {
+  const sampleTimes = cursorPoints
+    .filter((point) => point.t > startMs && point.t < endMs)
+    .map((point) => point.t);
+  const times = [startMs, ...sampleTimes, endMs];
+  const positions = times
+    .map((timeMs) => cursorPositionFromPoints(cursorPoints, timeMs))
+    .filter((position) => position !== null);
+
+  return positions.slice(1).reduce((total, position, index) => {
+    const previous = positions[index];
+    return total + Math.hypot(
+      position.x - previous.x,
+      position.y - previous.y,
+    );
+  }, 0);
+}
+
+export function detectDeadAirSpans(timeline) {
+  const scanEndMs = Math.max(
+    0,
+    timeline.durationMs - DEAD_AIR_END_EXEMPTION_MS,
+  );
+  const activityTimes = new Set([0, scanEndMs]);
+  const addActivityTime = (timeMs) => {
+    if (timeMs >= 0 && timeMs <= scanEndMs) {
+      activityTimes.add(timeMs);
+    }
+  };
+  const cursorPoints = timeline.events.filter(
+    (event) => event.kind === "cursor",
+  );
+
+  for (const event of timeline.events) {
+    if (event.kind === "cursor") continue;
+
+    addActivityTime(event.t);
+    if (event.kind === "spotlight") {
+      addActivityTime(event.t + event.durationMs);
+      addActivityTime(event.t + event.durationMs + event.holdMs);
+    }
+    const endMs = eventEnd(event);
+    if (endMs !== undefined) addActivityTime(endMs);
+  }
+
+  const outro = timeline.events.find((event) => event.kind === "outro");
+  const outroEndMs = outro ? eventEnd(outro) : undefined;
+  const boundaries = [...activityTimes].sort((left, right) => left - right);
+
+  return boundaries.slice(1).flatMap((endMs, index) => {
+    const startMs = boundaries[index];
+    const durationMs = endMs - startMs;
+    const overlapsOutro =
+      outro !== undefined &&
+      outroEndMs !== undefined &&
+      startMs < outroEndMs &&
+      endMs > outro.t;
+    const travel = cursorTravel(cursorPoints, startMs, endMs);
+
+    if (
+      durationMs < DEAD_AIR_THRESHOLD_MS ||
+      travel >= DEAD_AIR_CURSOR_TRAVEL_PX ||
+      overlapsOutro
+    ) {
+      return [];
+    }
+
+    return [{ startMs, durationMs, verdict: "WARN" }];
+  });
+}
+
 export function scoreTimeline(timeline) {
   const sourceWidth =
     timeline.viewport.width * timeline.viewport.deviceScaleFactor;
@@ -231,7 +324,10 @@ export function scoreTimeline(timeline) {
       };
     });
 
-  return scoreCameraSeries(samples, moves, FPS, baseScale, FRAME_WIDTH);
+  return {
+    ...scoreCameraSeries(samples, moves, FPS, baseScale, FRAME_WIDTH),
+    deadAirSpans: detectDeadAirSpans(timeline),
+  };
 }
 
 function formatNumber(value) {
@@ -239,7 +335,7 @@ function formatNumber(value) {
 }
 
 function printHumanReadable(score) {
-  const { metrics, perMove, verdict } = score;
+  const { metrics, perMove, verdict, deadAirSpans } = score;
   console.log(`Motion score: ${verdict}`);
   console.log("");
   console.log("Metric                         Max       P95       Verdict");
@@ -261,13 +357,28 @@ function printHumanReadable(score) {
     `Camera moves: ${metrics.cameraMoves.count} (${metrics.cameraMoves.durationsMs.map((duration) => `${duration}ms`).join(", ") || "none"})`,
   );
 
-  if (perMove.length === 0) return;
+  if (perMove.length > 0) {
+    console.log("");
+    console.log("Move  Duration  Start edge  End edge  Jump ratio  Verdict");
+    console.log("----  --------  ----------  --------  ----------  -------");
+    for (const move of perMove) {
+      console.log(
+        `${String(move.eventIndex).padStart(4)}  ${`${move.durationMs}ms`.padStart(8)}  ${formatNumber(move.startEdgeRatio).padStart(10)}  ${formatNumber(move.endEdgeRatio).padStart(8)}  ${formatNumber(move.maxVelocityJumpRatio).padStart(10)}  ${move.verdict}`,
+      );
+    }
+  }
+
   console.log("");
-  console.log("Move  Duration  Start edge  End edge  Jump ratio  Verdict");
-  console.log("----  --------  ----------  --------  ----------  -------");
-  for (const move of perMove) {
+  if (deadAirSpans.length === 0) {
+    console.log("Dead air: none");
+    return;
+  }
+
+  console.log("Span  Start     Duration  Verdict");
+  console.log("----  --------  --------  -------");
+  for (const [index, span] of deadAirSpans.entries()) {
     console.log(
-      `${String(move.eventIndex).padStart(4)}  ${`${move.durationMs}ms`.padStart(8)}  ${formatNumber(move.startEdgeRatio).padStart(10)}  ${formatNumber(move.endEdgeRatio).padStart(8)}  ${formatNumber(move.maxVelocityJumpRatio).padStart(10)}  ${move.verdict}`,
+      `${String(index + 1).padStart(4)}  ${`${span.startMs}ms`.padStart(8)}  ${`${span.durationMs}ms`.padStart(8)}  ${span.verdict}`,
     );
   }
 }

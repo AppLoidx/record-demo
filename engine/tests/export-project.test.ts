@@ -93,6 +93,7 @@ describe("exportProject", () => {
       ".nvmrc",
       "README.md",
       "fixtures/timeline.json",
+      "lib/cursor-position.ts",
       "lib/timeline.ts",
       "package.json",
       "pnpm-workspace.yaml",

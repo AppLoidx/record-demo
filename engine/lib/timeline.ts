@@ -24,6 +24,12 @@ export type Timeline = {
 
 export type TimelineEvent = Timeline["events"][number];
 
+export type SpotlightEvent = Extract<TimelineEvent, { kind: "spotlight" }>;
+
+export function spotlightTotalDuration(spotlight: SpotlightEvent) {
+  return spotlight.durationMs * 2 + spotlight.holdMs;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
