@@ -81,8 +81,11 @@ pnpm install
 pnpm studio
 ```
 
-Use the props panel or `fixtures/timeline.json` to edit captions, zoom timing (keep zoom
-moves at or above the 1650ms floor), spotlight timing, and the outro title. Edit
+Studio's timeline panel shows editor-style tracks (Screen filmstrip, one named clip per
+caption, spotlight, zoom move, and outro) - drag the playhead to scrub, click a clip's
+row to find its event. Use the props panel or `fixtures/timeline.json` to edit captions,
+zoom timing (keep zoom moves at or above the 1650ms floor), spotlight timing, and the
+outro title. Edit
 `remotion/theme.ts` for colors, typography, spacing, and motion. Render the finished
 16:9 video with `pnpm render`.
 
