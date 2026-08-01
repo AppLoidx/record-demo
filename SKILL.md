@@ -70,6 +70,22 @@ The runner prints absolute deliverable paths when it finishes. Treat live-site
 reproducibility as the target site's responsibility and never embed real credentials in
 a storyboard.
 
+## Edit a recorded demo in Remotion Studio
+
+Export a self-contained project after recording, then install and open Studio:
+
+```bash
+node /home/bbx/.claude/skills/record-demo/engine/scripts/export-project.mjs <name>
+cd /home/bbx/.claude/skills/record-demo/engine/out/<name>-project
+pnpm install
+pnpm studio
+```
+
+Use the props panel or `fixtures/timeline.json` to edit captions, zoom timing (keep zoom
+moves at or above the 1650ms floor), spotlight timing, and the outro title. Edit
+`remotion/theme.ts` for colors, typography, spacing, and motion. Render the finished
+16:9 video with `pnpm render`.
+
 ## Motion and storyboard rules (what makes a clip postable)
 
 - **One camera move per scene, not per field.** Zoom once to the section, act inside it.

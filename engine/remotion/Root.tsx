@@ -10,6 +10,7 @@ import {
   DemoVideo,
   type DemoVideoProps,
 } from "./DemoVideo";
+import { demoVideoSchema } from "./schema";
 import { compositionFps, compositionPresets } from "./theme";
 
 const timelineValue: unknown = fixtureTimeline;
@@ -51,6 +52,7 @@ export function RemotionRoot() {
           )}
           defaultProps={defaultProps}
           calculateMetadata={calculateMetadata}
+          schema={demoVideoSchema}
         />
       ))}
     </>
