@@ -2,13 +2,16 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { registerHooks } from "node:module";
-import { cursorPosition } from "../lib/cursor-position.ts";
-import { parseTimeline } from "../lib/timeline.ts";
+import { cursorPositionFromPoints } from "../lib/cursor-position.ts";
+import {
+  parseTimeline,
+  spotlightTotalDuration,
+} from "../lib/timeline.ts";
 
 // Static stretches at or above this duration read as dead air.
 const DEAD_AIR_THRESHOLD_MS = 3_500;
 // Cursor travel below this CSS-pixel distance still reads as static.
-const DEAD_AIR_CURSOR_DISPLACEMENT_PX = 40;
+const DEAD_AIR_CURSOR_TRAVEL_PX = 40;
 // A quiet final beat this short is intentional rather than dead air.
 const DEAD_AIR_END_EXEMPTION_MS = 1_000;
 const FPS = 60;
@@ -200,19 +203,24 @@ export function scoreCameraSeries(
 }
 
 function eventEnd(event) {
+  if (event.kind === "spotlight") {
+    return event.t + spotlightTotalDuration(event);
+  }
+  if (event.kind === "zoom") {
+    return (
+      event.t + Math.max(demoTheme.zoom.minimumDurationMs, event.durationMs)
+    );
+  }
   return "durationMs" in event ? event.t + event.durationMs : undefined;
 }
 
-function cursorDisplacement(timeline, startMs, endMs) {
-  const sampleTimes = timeline.events
-    .filter(
-      (event) =>
-        event.kind === "cursor" && event.t > startMs && event.t < endMs,
-    )
-    .map((event) => event.t);
+function cursorTravel(cursorPoints, startMs, endMs) {
+  const sampleTimes = cursorPoints
+    .filter((point) => point.t > startMs && point.t < endMs)
+    .map((point) => point.t);
   const times = [startMs, ...sampleTimes, endMs];
   const positions = times
-    .map((timeMs) => cursorPosition(timeline, timeMs))
+    .map((timeMs) => cursorPositionFromPoints(cursorPoints, timeMs))
     .filter((position) => position !== null);
 
   return positions.slice(1).reduce((total, position, index) => {
@@ -230,17 +238,25 @@ export function detectDeadAirSpans(timeline) {
     timeline.durationMs - DEAD_AIR_END_EXEMPTION_MS,
   );
   const activityTimes = new Set([0, scanEndMs]);
+  const addActivityTime = (timeMs) => {
+    if (timeMs >= 0 && timeMs <= scanEndMs) {
+      activityTimes.add(timeMs);
+    }
+  };
+  const cursorPoints = timeline.events.filter(
+    (event) => event.kind === "cursor",
+  );
 
   for (const event of timeline.events) {
     if (event.kind === "cursor") continue;
 
-    if (event.t >= 0 && event.t <= scanEndMs) {
-      activityTimes.add(event.t);
+    addActivityTime(event.t);
+    if (event.kind === "spotlight") {
+      addActivityTime(event.t + event.durationMs);
+      addActivityTime(event.t + event.durationMs + event.holdMs);
     }
     const endMs = eventEnd(event);
-    if (endMs !== undefined && endMs >= 0 && endMs <= scanEndMs) {
-      activityTimes.add(endMs);
-    }
+    if (endMs !== undefined) addActivityTime(endMs);
   }
 
   const outro = timeline.events.find((event) => event.kind === "outro");
@@ -255,11 +271,11 @@ export function detectDeadAirSpans(timeline) {
       outroEndMs !== undefined &&
       startMs < outroEndMs &&
       endMs > outro.t;
-    const displacement = cursorDisplacement(timeline, startMs, endMs);
+    const travel = cursorTravel(cursorPoints, startMs, endMs);
 
     if (
       durationMs < DEAD_AIR_THRESHOLD_MS ||
-      displacement >= DEAD_AIR_CURSOR_DISPLACEMENT_PX ||
+      travel >= DEAD_AIR_CURSOR_TRAVEL_PX ||
       overlapsOutro
     ) {
       return [];

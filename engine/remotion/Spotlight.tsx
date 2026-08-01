@@ -1,9 +1,14 @@
 import { useId } from "react";
 import { Easing } from "remotion";
-import type { Timeline, TimelineEvent } from "../lib/timeline";
+import {
+  spotlightTotalDuration,
+  type SpotlightEvent,
+  type Timeline,
+} from "../lib/timeline";
 import { demoTheme } from "./theme";
 
-export type SpotlightEvent = Extract<TimelineEvent, { kind: "spotlight" }>;
+export { spotlightTotalDuration } from "../lib/timeline";
+export type { SpotlightEvent } from "../lib/timeline";
 const [spotlightX1, spotlightY1, spotlightX2, spotlightY2] =
   demoTheme.zoom.easing;
 const spotlightEasing = Easing.bezier(
@@ -12,10 +17,6 @@ const spotlightEasing = Easing.bezier(
   spotlightX2,
   spotlightY2,
 );
-
-export function spotlightTotalDuration(spotlight: SpotlightEvent) {
-  return spotlight.durationMs * 2 + spotlight.holdMs;
-}
 
 export function resolveSpotlightOpacity(
   spotlight: SpotlightEvent,

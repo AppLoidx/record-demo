@@ -1,7 +1,11 @@
-import type { Timeline } from "./timeline";
+import type { Timeline, TimelineEvent } from "./timeline";
 
-export function cursorPosition(timeline: Timeline, timeMs: number) {
-  const points = timeline.events.filter((event) => event.kind === "cursor");
+export type CursorPoint = Extract<TimelineEvent, { kind: "cursor" }>;
+
+export function cursorPositionFromPoints(
+  points: readonly CursorPoint[],
+  timeMs: number,
+) {
   if (points.length === 0 || timeMs < points[0]!.t) {
     return null;
   }
@@ -22,4 +26,9 @@ export function cursorPosition(timeline: Timeline, timeMs: number) {
 
   const last = points.at(-1)!;
   return { x: last.x, y: last.y, firstAt: points[0]!.t };
+}
+
+export function cursorPosition(timeline: Timeline, timeMs: number) {
+  const points = timeline.events.filter((event) => event.kind === "cursor");
+  return cursorPositionFromPoints(points, timeMs);
 }
