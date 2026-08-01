@@ -17,6 +17,7 @@ const {
 const path = await import("node:path");
 const { fileURLToPath } = await import("node:url");
 const { parseTimeline } = await import("../lib/timeline.ts");
+const { compositionPresets } = await import("../remotion/theme.ts");
 
 const demosRoot = fileURLToPath(new URL("..", import.meta.url));
 const outputDir = path.join(demosRoot, "out");
@@ -25,7 +26,7 @@ const fixturePath = path.join(demosRoot, "fixtures", "timeline.json");
 const sourceName = "composition-proof-source.mp4";
 const sourcePath = path.join(publicDir, sourceName);
 const propsPath = path.join(outputDir, "composition-proof-props.json");
-const outputPath = path.join(outputDir, "composition-proof.mp4");
+const presets = compositionPresets.map(({ id }) => id);
 
 function systemEnv() {
   return {
@@ -106,47 +107,55 @@ async function main() {
     )}\n`,
     "utf8",
   );
-  await run("pnpm", [
-    "exec",
-    "remotion",
-    "render",
-    "remotion/Root.tsx",
-    "16x9",
-    outputPath,
-    `--props=${propsPath}`,
-    "--fps=60",
-    "--codec=h264",
-    "--crf=18",
-    "--muted",
-    "--overwrite",
-    "--scale=0.25",
-  ]);
+  for (const preset of presets) {
+    const outputPath = path.join(
+      outputDir,
+      `composition-proof-${preset}.mp4`,
+    );
+    await run("pnpm", [
+      "exec",
+      "remotion",
+      "render",
+      "remotion/Root.tsx",
+      preset,
+      outputPath,
+      `--props=${propsPath}`,
+      "--fps=60",
+      "--codec=h264",
+      "--crf=18",
+      "--muted",
+      "--overwrite",
+      "--scale=0.25",
+    ]);
 
-  if ((await stat(outputPath)).size === 0) {
-    throw new Error("Composition proof output is empty");
-  }
-  const duration = Number.parseFloat(
-    await run(
-      "ffprobe",
-      [
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        outputPath,
-      ],
-      { capture: true },
-    ),
-  );
-  if (!Number.isFinite(duration) || duration <= 0) {
-    throw new Error(`Composition proof has invalid duration: ${duration}`);
-  }
+    if ((await stat(outputPath)).size === 0) {
+      throw new Error(`Composition proof output is empty for ${preset}`);
+    }
+    const duration = Number.parseFloat(
+      await run(
+        "ffprobe",
+        [
+          "-v",
+          "error",
+          "-show_entries",
+          "format=duration",
+          "-of",
+          "default=noprint_wrappers=1:nokey=1",
+          outputPath,
+        ],
+        { capture: true },
+      ),
+    );
+    if (!Number.isFinite(duration) || duration <= 0) {
+      throw new Error(
+        `Composition proof has invalid duration for ${preset}: ${duration}`,
+      );
+    }
 
-  console.log(
-    `Composition proof passed: ${path.relative(demosRoot, outputPath)} (${duration.toFixed(2)}s)`,
-  );
+    console.log(
+      `Composition proof passed: ${path.relative(demosRoot, outputPath)} (${duration.toFixed(2)}s)`,
+    );
+  }
 }
 
 try {

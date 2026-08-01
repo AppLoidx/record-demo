@@ -51,14 +51,20 @@ Require Node 22, `ffmpeg`, `Xvfb`, and `xdpyinfo`. Install dependencies once ins
 node /home/bbx/.claude/skills/record-demo/engine/record.mjs \
   --script /absolute/or/cwd-relative/demo.demo.ts \
   --url https://example.org \
-  [--name output-slug] [--raw]
+  [--name output-slug] [--formats 16x9,1x1,9x16] \
+  [--chrome none|macos|browser] [--raw]
 ```
+
+Use `--formats` to select one or more composition presets (default `16x9`) and
+`--chrome` to choose the rendered window frame (default `none`). Formats render in
+the requested order, and the first is the primary used to encode the GIF.
+The `9x16` format is an aggressive center crop (about 44% of the page width is visible in the wide shot), so keep the action centered when authoring for portrait.
 
 Use `--raw` to stop after the clean capture. Without it, expect these deliverables:
 
 - `engine/out/<name>-raw.mp4`
-- `engine/out/<name>-16x9.mp4`
-- `engine/out/<name>.gif`
+- `engine/out/<name>-<format>.mp4` for every requested format
+- `engine/out/<name>.gif` encoded from the primary format
 
 The runner prints absolute deliverable paths when it finishes. Treat live-site
 reproducibility as the target site's responsibility and never embed real credentials in

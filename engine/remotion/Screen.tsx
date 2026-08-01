@@ -13,6 +13,7 @@ type ScreenProps = {
   height: number;
   radius: number;
   chrome: WindowChrome;
+  chromeHeight: number;
   timeline: Timeline;
   videoSrc: string;
   camera: CameraTransform;
@@ -172,17 +173,11 @@ export function Screen({
   height,
   radius,
   chrome,
+  chromeHeight,
   timeline,
   videoSrc,
   camera,
 }: ScreenProps) {
-  const chromeHeight =
-    chrome === "none"
-      ? 0
-      : Math.max(
-          demoTheme.screen.chromeMinimumHeight,
-          width * demoTheme.screen.chromeHeightRatio,
-        );
   const viewportRadius =
     chrome === "none" ? radius : `0 0 ${radius}px ${radius}px`;
 

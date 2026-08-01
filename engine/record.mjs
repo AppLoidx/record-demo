@@ -23,6 +23,8 @@ const { findClapperboardFrame } = await import("./lib/clapperboard.ts");
 const { encodeGif, gifPalettePath, logGifResult } = await import(
   "./lib/gif.mjs"
 );
+const { parseCliArgs } = await import("./lib/record-options.mjs");
+const { renderPresetSequence } = await import("./lib/render-presets.mjs");
 const { parseTimeline, serializeTimeline } = await import("./lib/timeline.ts");
 
 const demosRoot = fileURLToPath(new URL(".", import.meta.url));
@@ -436,7 +438,13 @@ async function createRemotionSource(masterPath, outputPath, syncFlashAt) {
   );
 }
 
-async function renderCompositions(demoName, timeline, videoPath) {
+async function renderCompositions(
+  demoName,
+  timeline,
+  videoPath,
+  formats,
+  windowChrome,
+) {
   const videoName = `${demoName}-trimmed-master.mp4`;
   const stagedVideo = path.join(publicDir, videoName);
   const propsPath = path.join(outputDir, `${demoName}-render-props.json`);
@@ -450,7 +458,7 @@ async function renderCompositions(demoName, timeline, videoPath) {
       {
         timeline,
         videoSrc: videoName,
-        windowChrome: "none",
+        windowChrome,
       },
       null,
       2,
@@ -458,35 +466,36 @@ async function renderCompositions(demoName, timeline, videoPath) {
     "utf8",
   );
 
-  const preset = "16x9";
-  const outputPath = path.join(outputDir, `${demoName}-${preset}.mp4`);
-  console.log(`Rendering ${preset} at 60fps.`);
-  await runCommand(
-    "pnpm",
-    [
-      "exec",
-      "remotion",
-      "render",
-      "remotion/Root.tsx",
-      preset,
-      outputPath,
-      `--props=${propsPath}`,
-      `--public-dir=${publicDir}`,
-      "--fps=60",
-      "--codec=h264",
-      "--crf=18",
-      "--concurrency=2",
-      "--timeout=120000",
-      "--muted",
-      "--overwrite",
-    ],
-    {
-      name: `Remotion ${preset} render`,
-      cwd: demosRoot,
-      env: systemEnv(),
-    },
-  );
-  return outputPath;
+  return renderPresetSequence(formats, async (preset) => {
+    const outputPath = path.join(outputDir, `${demoName}-${preset}.mp4`);
+    console.log(`Rendering ${preset} at 60fps.`);
+    await runCommand(
+      "pnpm",
+      [
+        "exec",
+        "remotion",
+        "render",
+        "remotion/Root.tsx",
+        preset,
+        outputPath,
+        `--props=${propsPath}`,
+        `--public-dir=${publicDir}`,
+        "--fps=60",
+        "--codec=h264",
+        "--crf=18",
+        "--concurrency=2",
+        "--timeout=120000",
+        "--muted",
+        "--overwrite",
+      ],
+      {
+        name: `Remotion ${preset} render`,
+        cwd: demosRoot,
+        env: systemEnv(),
+      },
+    );
+    return outputPath;
+  });
 }
 
 async function createGif(demoName, editedPath) {
@@ -513,67 +522,15 @@ async function createPlaywrightEntry(scriptPath) {
   return entryPath;
 }
 
-const usage =
-  "Usage: node record.mjs --script <path> --url <absolute http(s) url> [--name <slug>] [--raw]";
-
-function parseCliArgs(cliArgs) {
-  const values = new Map();
-  let rawOnly = false;
-
-  for (let index = 0; index < cliArgs.length; index += 1) {
-    const arg = cliArgs[index];
-    if (arg === "--raw") {
-      rawOnly = true;
-      continue;
-    }
-    if (!["--script", "--url", "--name"].includes(arg)) {
-      throw new Error(`${usage}\nUnknown argument: ${arg}`);
-    }
-    const value = cliArgs[index + 1];
-    if (!value || value.startsWith("--")) {
-      throw new Error(`${usage}\nMissing value for ${arg}.`);
-    }
-    values.set(arg, value);
-    index += 1;
-  }
-
-  const scriptArg = values.get("--script");
-  const urlArg = values.get("--url");
-  if (!scriptArg || !urlArg) {
-    throw new Error(`${usage}\nBoth --script and --url are required.`);
-  }
-
-  let targetUrl;
-  try {
-    targetUrl = new URL(urlArg);
-  } catch {
-    throw new Error(`${usage}\n--url must be an absolute HTTP(S) URL.`);
-  }
-  if (targetUrl.protocol !== "http:" && targetUrl.protocol !== "https:") {
-    throw new Error(`${usage}\n--url must be an absolute HTTP(S) URL.`);
-  }
-
-  const scriptPath = path.resolve(process.cwd(), scriptArg);
-  const defaultName = path.basename(scriptPath).replace(/\.demo\.ts$/, "");
-  const demoName = values.get("--name") ?? defaultName;
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(demoName)) {
-    throw new Error(
-      `${usage}\n--name must be a lowercase slug containing letters, numbers, and single hyphens.`,
-    );
-  }
-
-  return {
+async function main() {
+  const {
     demoName,
+    formats,
     rawOnly,
     scriptPath,
-    targetUrl: targetUrl.toString(),
-  };
-}
-
-async function main() {
-  const { demoName, rawOnly, scriptPath, targetUrl } = parseCliArgs(
-    process.argv.slice(2),
-  );
+    targetUrl,
+    windowChrome,
+  } = parseCliArgs(process.argv.slice(2));
   await access(scriptPath, fsConstants.R_OK);
   if (!(await executableExists("Xvfb"))) {
     throw new Error(
@@ -683,19 +640,21 @@ async function main() {
     { name: "Raw deliverable transcode", cwd: demosRoot, env: systemEnv() },
   );
 
-  let editedPath;
+  let editedPaths;
   let gifPath;
   if (!rawOnly) {
-    editedPath = await renderCompositions(
+    editedPaths = await renderCompositions(
       demoName,
       synchronizedTimeline,
       trimmedMasterPath,
+      formats,
+      windowChrome,
     );
-    gifPath = await createGif(demoName, editedPath);
+    gifPath = await createGif(demoName, editedPaths[0]);
   }
   console.log("Demo outputs:");
   console.log(rawPath);
-  if (editedPath) console.log(editedPath);
+  for (const editedPath of editedPaths ?? []) console.log(editedPath);
   if (gifPath) console.log(gifPath);
 }
 
