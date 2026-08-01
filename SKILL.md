@@ -84,6 +84,9 @@ a storyboard.
   Spotlight rects must fit the viewport (enforced); zoom rects may overflow by design.
 - **Seed waits for real data**, not just the trigger element - otherwise the video opens
   on a skeleton. Wait for a known content node + ~600ms.
+- **`d.settle(locator)` before outcome captions.** Views that re-fetch after a submit
+  blank briefly; a plain `waitFor` resolves on the first paint and the outcome caption
+  fires over a white page.
 - **Captions are imperatives** tied to the cursor action; put an outcome caption
   (`d.caption(...)` late in the step) on closing scenes; trim step captions so
   imperatives never hang over completed actions.
