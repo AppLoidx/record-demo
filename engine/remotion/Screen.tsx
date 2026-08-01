@@ -1,8 +1,7 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { OffthreadVideo } from "remotion";
 import type { Timeline } from "../lib/timeline";
 import { Cursor } from "./Cursor";
-import { Spotlight } from "./Spotlight";
 import { demoTheme } from "./theme";
 import type { CameraTransform } from "./zoom";
 
@@ -18,6 +17,7 @@ type ScreenProps = {
   videoSrc: string;
   camera: CameraTransform;
   showCursor: boolean;
+  children?: ReactNode;
 };
 
 function UrlPill() {
@@ -118,6 +118,7 @@ function VideoViewport({
   camera,
   radius,
   showCursor,
+  children,
 }: {
   width: number;
   height: number;
@@ -126,6 +127,7 @@ function VideoViewport({
   camera: CameraTransform;
   radius: CSSProperties["borderRadius"];
   showCursor: boolean;
+  children?: ReactNode;
 }) {
   const sourceWidth =
     timeline.viewport.width * timeline.viewport.deviceScaleFactor;
@@ -164,7 +166,7 @@ function VideoViewport({
             objectFit: "fill",
           }}
         />
-        <Spotlight timeline={timeline} />
+        {children}
       </div>
       {showCursor ? <Cursor timeline={timeline} camera={camera} /> : null}
     </div>
@@ -181,6 +183,7 @@ export function Screen({
   videoSrc,
   camera,
   showCursor,
+  children,
 }: ScreenProps) {
   const viewportRadius =
     chrome === "none" ? radius : `0 0 ${radius}px ${radius}px`;
@@ -207,7 +210,9 @@ export function Screen({
         camera={camera}
         radius={viewportRadius}
         showCursor={showCursor}
-      />
+      >
+        {children}
+      </VideoViewport>
     </div>
   );
 }

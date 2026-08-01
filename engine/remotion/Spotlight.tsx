@@ -1,9 +1,9 @@
 import { useId } from "react";
-import { Easing, useCurrentFrame, useVideoConfig } from "remotion";
+import { Easing } from "remotion";
 import type { Timeline, TimelineEvent } from "../lib/timeline";
 import { demoTheme } from "./theme";
 
-type SpotlightEvent = Extract<TimelineEvent, { kind: "spotlight" }>;
+export type SpotlightEvent = Extract<TimelineEvent, { kind: "spotlight" }>;
 const [spotlightX1, spotlightY1, spotlightX2, spotlightY2] =
   demoTheme.zoom.easing;
 const spotlightEasing = Easing.bezier(
@@ -13,7 +13,7 @@ const spotlightEasing = Easing.bezier(
   spotlightY2,
 );
 
-function spotlightTotalDuration(spotlight: SpotlightEvent) {
+export function spotlightTotalDuration(spotlight: SpotlightEvent) {
   return spotlight.durationMs * 2 + spotlight.holdMs;
 }
 
@@ -39,21 +39,26 @@ export function resolveSpotlightOpacity(
   return spotlightEasing((totalDurationMs - elapsed) / durationMs);
 }
 
-export function Spotlight({ timeline }: { timeline: Timeline }) {
-  const maskId = useId();
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const timeMs = (frame / fps) * 1_000;
-  const spotlights = timeline.events
+function activeSpotlightAt(timeline: Timeline, timeMs: number) {
+  return timeline.events
     .filter((event) => event.kind === "spotlight")
     .filter(
       (event) =>
         event.t <= timeMs && event.t + spotlightTotalDuration(event) >= timeMs,
-    );
-  const spotlight = spotlights.at(-1);
+    )
+    .at(-1);
+}
 
-  if (!spotlight) return null;
-
+function SpotlightVisual({
+  timeline,
+  spotlight,
+  timeMs,
+}: {
+  timeline: Timeline;
+  spotlight: SpotlightEvent;
+  timeMs: number;
+}) {
+  const maskId = useId();
   const opacity = resolveSpotlightOpacity(spotlight, timeMs);
   const deviceScaleFactor = timeline.viewport.deviceScaleFactor;
   const sourceWidth = timeline.viewport.width * deviceScaleFactor;
@@ -108,5 +113,25 @@ export function Spotlight({ timeline }: { timeline: Timeline }) {
         }}
       />
     </div>
+  );
+}
+
+export function SpotlightTrack({
+  timeline,
+  spotlight,
+  timeMs,
+}: {
+  timeline: Timeline;
+  spotlight: SpotlightEvent;
+  timeMs: number;
+}) {
+  if (activeSpotlightAt(timeline, timeMs) !== spotlight) return null;
+
+  return (
+    <SpotlightVisual
+      timeline={timeline}
+      spotlight={spotlight}
+      timeMs={timeMs}
+    />
   );
 }

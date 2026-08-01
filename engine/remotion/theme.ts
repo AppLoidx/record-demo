@@ -7,6 +7,21 @@ export const captureViewport = {
 
 export const compositionFps = 60;
 
+export function msToFrame(timeMs: number, fps: number) {
+  return Math.ceil((timeMs / 1_000) * fps);
+}
+
+export function msToFrameWindow(tMs: number, durationMs: number, fps: number) {
+  const from = msToFrame(tMs, fps);
+  return {
+    from,
+    durationInFrames: Math.max(
+      1,
+      Math.floor(((tMs + durationMs) / 1_000) * fps) - from + 1,
+    ),
+  };
+}
+
 export const demoTheme = {
   fontFamily:
     '"Geist Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',

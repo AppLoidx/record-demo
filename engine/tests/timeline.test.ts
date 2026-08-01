@@ -109,4 +109,21 @@ describe("timeline serialization", () => {
       ),
     ).toThrow("Invalid demo timeline");
   });
+
+  it("rejects a negative caption duration", () => {
+    expect(() =>
+      parseTimeline(
+        JSON.stringify({
+          version: 1,
+          name: "invalid-caption",
+          viewport: { width: 1920, height: 1080, deviceScaleFactor: 1.5 },
+          capture: { fps: 30, syncFlashAt: 0 },
+          durationMs: 1_000,
+          events: [
+            { t: 0, kind: "caption", text: "Invalid", durationMs: -1 },
+          ],
+        }),
+      ),
+    ).toThrow("Invalid demo timeline");
+  });
 });
