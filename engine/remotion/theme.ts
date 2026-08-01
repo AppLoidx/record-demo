@@ -108,4 +108,6 @@ export const demoTheme = {
 
 export const compositionPresets = [
   { id: "16x9", width: 2560, height: 1440 },
+  { id: "1x1", width: 1440, height: 1440 },
+  { id: "9x16", width: 1080, height: 1920 },
 ] as const;

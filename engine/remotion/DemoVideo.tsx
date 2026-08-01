@@ -51,31 +51,52 @@ export function assertDemoVideoProps(props: DemoVideoProps) {
   }
 }
 
-function layoutFor(width: number, height: number) {
+function chromeHeightFor(screenWidth: number, chrome: WindowChrome) {
+  return chrome === "none"
+    ? 0
+    : Math.max(
+        demoTheme.screen.chromeMinimumHeight,
+        screenWidth * demoTheme.screen.chromeHeightRatio,
+      );
+}
+
+export function layoutFor(
+  width: number,
+  height: number,
+  chrome: WindowChrome = "none",
+) {
   const aspect = width / height;
   if (aspect >= demoTheme.layout.landscape.minAspect) {
     const screenWidth = width * demoTheme.layout.landscape.screenWidth;
+    const chromeHeight = chromeHeightFor(screenWidth, chrome);
     return {
       screenWidth,
       screenHeight: screenWidth * (9 / 16),
-      top: (height - screenWidth * (9 / 16)) / 2,
+      chromeHeight,
+      top: (height - screenWidth * (9 / 16) - chromeHeight) / 2,
       captionBottom: height * demoTheme.layout.landscape.captionBottom,
     };
   }
 
   if (aspect >= demoTheme.layout.square.minAspect) {
+    const screenWidth = width * demoTheme.layout.square.screenWidth;
+    const chromeHeight = chromeHeightFor(screenWidth, chrome);
     return {
-      screenWidth: width * demoTheme.layout.square.screenWidth,
+      screenWidth,
       screenHeight: height * demoTheme.layout.square.screenHeight,
-      top: height * demoTheme.layout.square.screenTop,
+      chromeHeight,
+      top: height * demoTheme.layout.square.screenTop - chromeHeight / 2,
       captionBottom: height * demoTheme.layout.square.captionBottom,
     };
   }
 
+  const screenWidth = width * demoTheme.layout.portrait.screenWidth;
+  const chromeHeight = chromeHeightFor(screenWidth, chrome);
   return {
-    screenWidth: width * demoTheme.layout.portrait.screenWidth,
+    screenWidth,
     screenHeight: height * demoTheme.layout.portrait.screenHeight,
-    top: height * demoTheme.layout.portrait.screenTop,
+    chromeHeight,
+    top: height * demoTheme.layout.portrait.screenTop - chromeHeight / 2,
     captionBottom: height * demoTheme.layout.portrait.captionBottom,
   };
 }
@@ -116,7 +137,7 @@ export function DemoVideo(props: DemoVideoProps) {
   assertDemoVideoProps(props);
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
-  const layout = layoutFor(width, height);
+  const layout = layoutFor(width, height, props.windowChrome);
   const camera = resolveCameraTransform(
     props.timeline,
     frame,
@@ -152,6 +173,7 @@ export function DemoVideo(props: DemoVideoProps) {
           height={layout.screenHeight}
           radius={radius}
           chrome={props.windowChrome}
+          chromeHeight={layout.chromeHeight}
           timeline={props.timeline}
           videoSrc={videoSrc}
           camera={camera}
