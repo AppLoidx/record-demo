@@ -7,6 +7,7 @@ import {
 import { assertTimeline, type Timeline } from "../lib/timeline";
 import { Background } from "./Background";
 import { Captions } from "./Captions";
+import { Outro, resolveOutro } from "./Outro";
 import { Screen, type WindowChrome } from "./Screen";
 import { captureViewport, demoTheme } from "./theme";
 import { resolveCameraTransform } from "./zoom";
@@ -150,6 +151,12 @@ export function DemoVideo(props: DemoVideoProps) {
     demoTheme.layout.minimumWindowRadius,
     layout.screenWidth * demoTheme.layout.windowRadiusRatio,
   );
+  const timeMs = (frame / fps) * 1_000;
+  const outro = resolveOutro(props.timeline, timeMs);
+  const outroScale =
+    1 - outro.progress * (1 - demoTheme.outro.recedeScale);
+  const screenOpacity =
+    1 - outro.progress * (1 - demoTheme.outro.screenOpacity);
 
   return (
     <AbsoluteFill
@@ -168,18 +175,30 @@ export function DemoVideo(props: DemoVideoProps) {
           transform: "translateX(-50%)",
         }}
       >
-        <Screen
-          width={layout.screenWidth}
-          height={layout.screenHeight}
-          radius={radius}
-          chrome={props.windowChrome}
-          chromeHeight={layout.chromeHeight}
-          timeline={props.timeline}
-          videoSrc={videoSrc}
-          camera={camera}
-        />
+        <div
+          style={{
+            opacity: screenOpacity,
+            transform: `scale(${outroScale})`,
+            willChange: "transform, opacity",
+          }}
+        >
+          <Screen
+            width={layout.screenWidth}
+            height={layout.screenHeight}
+            radius={radius}
+            chrome={props.windowChrome}
+            chromeHeight={layout.chromeHeight}
+            timeline={props.timeline}
+            videoSrc={videoSrc}
+            camera={camera}
+            showCursor={!outro.started}
+          />
+        </div>
       </div>
-      <Captions timeline={props.timeline} bottom={layout.captionBottom} />
+      {outro.started ? null : (
+        <Captions timeline={props.timeline} bottom={layout.captionBottom} />
+      )}
+      <Outro outro={outro} frameWidth={width} />
     </AbsoluteFill>
   );
 }

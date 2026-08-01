@@ -90,6 +90,8 @@ a storyboard.
 - **Captions are imperatives** tied to the cursor action; put an outcome caption
   (`d.caption(...)` late in the step) on closing scenes; trim step captions so
   imperatives never hang over completed actions.
+- **`d.outro(title)` closes postable clips** with a calm end slate after the final
+  scene.
 - **Always assert the end state** - without it the pipeline renders a polished video of
   a broken flow.
 - Never ship a clip with a localhost URL, internal hostname, provider name, or real

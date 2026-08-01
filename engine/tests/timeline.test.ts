@@ -34,6 +34,12 @@ describe("timeline serialization", () => {
           holdMs: 800,
         },
         { t: 1800, kind: "zoom", rect: null, durationMs: 400 },
+        {
+          t: 2_000,
+          kind: "outro",
+          title: "Any website. One storyboard.",
+          durationMs: 400,
+        },
       ],
     };
 
@@ -64,6 +70,41 @@ describe("timeline serialization", () => {
           capture: { fps: 30, syncFlashAt: 0 },
           durationMs: 1_000,
           events: [event],
+        }),
+      ),
+    ).toThrow("Invalid demo timeline");
+  });
+
+  it("rejects more than one outro", () => {
+    expect(() =>
+      parseTimeline(
+        JSON.stringify({
+          version: 1,
+          name: "duplicate-outro",
+          viewport: { width: 1920, height: 1080, deviceScaleFactor: 1.5 },
+          capture: { fps: 30, syncFlashAt: 0 },
+          durationMs: 4_800,
+          events: [
+            { t: 0, kind: "outro", title: "First", durationMs: 2_400 },
+            { t: 2_400, kind: "outro", title: "Second", durationMs: 2_400 },
+          ],
+        }),
+      ),
+    ).toThrow("Invalid demo timeline");
+  });
+
+  it("rejects a negative outro duration", () => {
+    expect(() =>
+      parseTimeline(
+        JSON.stringify({
+          version: 1,
+          name: "invalid-outro",
+          viewport: { width: 1920, height: 1080, deviceScaleFactor: 1.5 },
+          capture: { fps: 30, syncFlashAt: 0 },
+          durationMs: 1_000,
+          events: [
+            { t: 0, kind: "outro", title: "End", durationMs: -1 },
+          ],
         }),
       ),
     ).toThrow("Invalid demo timeline");
