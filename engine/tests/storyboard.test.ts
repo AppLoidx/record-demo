@@ -1,0 +1,176 @@
+import type { Locator, Page } from "@playwright/test";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Storyboard, unionRects } from "../lib/storyboard";
+import type { Rect, TimelineEvent } from "../lib/timeline";
+
+function storyboardEvents(storyboard: Storyboard) {
+  return (
+    storyboard as unknown as {
+      events: TimelineEvent[];
+    }
+  ).events;
+}
+
+function locatorWithBoxes(boxes: Rect[]) {
+  let measurement = 0;
+  return {
+    waitFor: vi.fn(async () => {}),
+    scrollIntoViewIfNeeded: vi.fn(async () => {}),
+    boundingBox: vi.fn(async () => {
+      const box = boxes[Math.min(measurement, boxes.length - 1)]!;
+      measurement += 1;
+      return box;
+    }),
+    evaluate: vi.fn(async () => undefined),
+  } as unknown as Locator;
+}
+
+function createStoryboard() {
+  const page = {
+    waitForTimeout: vi.fn(async () => {}),
+  } as unknown as Page;
+  const storyboard = new Storyboard("stable-target", page, {
+    width: 1920,
+    height: 1080,
+    deviceScaleFactor: 1.5,
+  });
+
+  return { page, storyboard };
+}
+
+describe("unionRects", () => {
+  it("preserves single-box dimensions without union arithmetic", () => {
+    expect(
+      unionRects([{ x: 100.1, y: 200.2, width: 33.3, height: 44.4 }], 0),
+    ).toEqual({ x: 100.1, y: 200.2, width: 33.3, height: 44.4 });
+  });
+
+  it("unions multiple boxes before applying padding", () => {
+    expect(
+      unionRects(
+        [
+          { x: 100, y: 200, width: 80, height: 40 },
+          { x: 240, y: 280, width: 120, height: 60 },
+        ],
+        16,
+      ),
+    ).toEqual({ x: 84, y: 184, width: 292, height: 172 });
+  });
+});
+
+describe("Storyboard.spotlightOff", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("rewrites the last spotlight hold so its fade-out starts now", () => {
+    vi.spyOn(performance, "now").mockReturnValue(2_000);
+    const storyboard = new Storyboard("spotlight-off", {} as Page, {
+      width: 1920,
+      height: 1080,
+      deviceScaleFactor: 1.5,
+    });
+    const events = storyboardEvents(storyboard);
+    events.push(
+      {
+        t: 100,
+        kind: "spotlight",
+        rect: { x: 100, y: 100, width: 200, height: 100 },
+        durationMs: 300,
+        holdMs: 20_000,
+      },
+      { t: 400, kind: "caption", text: "Keep going", durationMs: 500 },
+      {
+        t: 500,
+        kind: "spotlight",
+        rect: { x: 300, y: 300, width: 200, height: 100 },
+        durationMs: 450,
+        holdMs: 20_000,
+      },
+    );
+
+    storyboard.spotlightOff();
+
+    expect(events[0]).toMatchObject({ holdMs: 20_000 });
+    expect(events[2]).toMatchObject({ holdMs: 1_050 });
+  });
+
+  it("throws when no spotlight has started", () => {
+    const storyboard = new Storyboard("spotlight-off", {} as Page, {
+      width: 1920,
+      height: 1080,
+      deviceScaleFactor: 1.5,
+    });
+
+    expect(() => storyboard.spotlightOff()).toThrow(
+      "Cannot turn off a spotlight before one has started",
+    );
+  });
+});
+
+describe("Storyboard target measurement", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each(["x", "y", "width", "height"] as const)(
+    "waits for the %s coordinate to repeat after nearest scrolling",
+    async (field) => {
+      const { page, storyboard } = createStoryboard();
+      const initial = { x: 100, y: 200, width: 300, height: 120 };
+      const settled = { ...initial, [field]: initial[field] + 20 };
+      const target = locatorWithBoxes([initial, settled, settled]);
+
+      await storyboard.zoomTo(target);
+
+      expect(storyboardEvents(storyboard).at(-1)).toMatchObject({
+        kind: "zoom",
+        rect: settled,
+      });
+      expect(page.waitForTimeout).toHaveBeenCalledTimes(2);
+      expect(page.waitForTimeout).toHaveBeenCalledWith(150);
+    },
+  );
+
+  it("stabilizes every locator after centered scrolling", async () => {
+    const { page, storyboard } = createStoryboard();
+    const first = locatorWithBoxes([
+      { x: 100, y: 490, width: 200, height: 100 },
+      { x: 100, y: 490, width: 200, height: 100 },
+      { x: 100, y: 490, width: 200, height: 100 },
+    ]);
+    const second = locatorWithBoxes([
+      { x: 320, y: 490, width: 160, height: 100 },
+      { x: 320, y: 490, width: 160, height: 100 },
+      { x: 360, y: 490, width: 160, height: 100 },
+      { x: 360, y: 490, width: 160, height: 100 },
+    ]);
+
+    await storyboard.zoomTo([first, second], { scroll: "center" });
+
+    expect(storyboardEvents(storyboard).at(-1)).toMatchObject({
+      kind: "zoom",
+      rect: { x: 100, y: 490, width: 420, height: 100 },
+    });
+    expect(page.waitForTimeout).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the last measurement when a spotlight target never settles", async () => {
+    const { page, storyboard } = createStoryboard();
+    const boxes = Array.from({ length: 9 }, (_, index) => ({
+      x: 100,
+      y: 200 + index,
+      width: 300,
+      height: 120,
+    }));
+    const target = locatorWithBoxes(boxes);
+
+    await storyboard.spotlight(target, { padding: 0 });
+
+    expect(storyboardEvents(storyboard).at(-1)).toMatchObject({
+      kind: "spotlight",
+      rect: boxes.at(-1),
+    });
+    expect(page.waitForTimeout).toHaveBeenCalledTimes(8);
+  });
+});

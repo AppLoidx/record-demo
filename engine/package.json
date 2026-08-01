@@ -1,0 +1,30 @@
+{
+  "name": "record-demo-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "record": "node ./record.mjs",
+    "render": "remotion render ./remotion/Root.tsx",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@playwright/test": "1.62.0",
+    "@remotion/cli": "4.0.499",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.499"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  },
+  "packageManager": "pnpm@10.8.1"
+}

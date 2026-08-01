@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "name": "composition-proof",
+  "viewport": {
+    "width": 1920,
+    "height": 1080,
+    "deviceScaleFactor": 1.5
+  },
+  "capture": {
+    "fps": 30,
+    "syncFlashAt": 0
+  },
+  "durationMs": 2000,
+  "events": [
+    {
+      "t": 0,
+      "kind": "caption",
+      "text": "Every workflow starts in context",
+      "durationMs": 900
+    },
+    {
+      "t": 0,
+      "kind": "cursor",
+      "x": 164,
+      "y": 112
+    },
+    {
+      "t": 220,
+      "kind": "cursor",
+      "x": 490,
+      "y": 230
+    },
+    {
+      "t": 430,
+      "kind": "cursor",
+      "x": 790,
+      "y": 340
+    },
+    {
+      "t": 470,
+      "kind": "click",
+      "x": 790,
+      "y": 340
+    },
+    {
+      "t": 620,
+      "kind": "zoom",
+      "rect": {
+        "x": 610,
+        "y": 190,
+        "width": 470,
+        "height": 330
+      },
+      "durationMs": 420
+    },
+    {
+      "t": 920,
+      "kind": "caption",
+      "text": "Focus follows the feature being discussed",
+      "durationMs": 900
+    },
+    {
+      "t": 960,
+      "kind": "spotlight",
+      "rect": {
+        "x": 690,
+        "y": 250,
+        "width": 310,
+        "height": 190
+      },
+      "durationMs": 300,
+      "holdMs": 400
+    },
+    {
+      "t": 1080,
+      "kind": "cursor",
+      "x": 920,
+      "y": 430
+    },
+    {
+      "t": 1450,
+      "kind": "zoom",
+      "rect": null,
+      "durationMs": 350
+    }
+  ]
+}
