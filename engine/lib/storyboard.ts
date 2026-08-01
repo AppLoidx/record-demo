@@ -268,6 +268,23 @@ export class Storyboard {
   }
 
   /**
+   * Type with a humanized cadence. Constant keyboard.type delays read robotic
+   * on video; this jitters per-character delays deterministically (hash of the
+   * character index, so reruns capture identical timings) and lingers slightly
+   * after word boundaries.
+   */
+  async type(text: string, baseDelayMs = 55) {
+    for (let index = 0; index < text.length; index += 1) {
+      const character = text[index]!;
+      await this.page.keyboard.type(character);
+      const jitter = ((index * 2654435761) % 97) / 97;
+      let delay = baseDelayMs * (0.55 + jitter * 1.1);
+      if (" .@-_".includes(character)) delay += baseDelayMs * 0.8;
+      await this.page.waitForTimeout(delay);
+    }
+  }
+
+  /**
    * Wait until a locator stays visible across two consecutive checks. Views
    * that re-fetch after their first paint briefly blank; a plain waitFor
    * resolves on the first paint and lets an outcome caption fire over the
