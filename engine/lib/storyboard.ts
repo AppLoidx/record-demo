@@ -267,6 +267,22 @@ export class Storyboard {
     await this.page.waitForTimeout(durationMs);
   }
 
+  /**
+   * Wait until a locator stays visible across two consecutive checks. Views
+   * that re-fetch after their first paint briefly blank; a plain waitFor
+   * resolves on the first paint and lets an outcome caption fire over the
+   * blank re-render.
+   */
+  async settle(locator: Locator, timeoutMs = 5_000) {
+    const startedAt = Date.now();
+    for (;;) {
+      await locator.waitFor({ state: "visible", timeout: timeoutMs });
+      await this.page.waitForTimeout(300);
+      if (await locator.isVisible()) return;
+      if (Date.now() - startedAt >= timeoutMs) return;
+    }
+  }
+
   async writeTimeline() {
     const timeline: Timeline = {
       version: 1,
