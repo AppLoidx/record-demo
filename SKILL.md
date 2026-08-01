@@ -121,7 +121,8 @@ outro title. Edit
 
 1. `pnpm typecheck && pnpm test` in `engine/`.
 2. `node scripts/score-motion.mjs out/timeline.json` - FAIL blocks; WARN zoom-rate
-   ~0.78/s is the accepted steady state; any discontinuity verdict is a camera bug.
+   ~0.78/s is the accepted steady state; any discontinuity verdict is a camera bug;
+   dead-air WARNs mean a static stretch >= 3.5s - re-pace or caption it.
 3. `node scripts/prove-composition.mjs` after engine changes.
 4. **Watch the actual render**: `ffmpeg -i out/<name>-16x9.mp4 -vf fps=1 out/frames/%03d.png`
    and read the frames. Zoom clipping, caption lag, cutout desync and on-screen dev URLs
