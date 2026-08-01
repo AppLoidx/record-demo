@@ -1,9 +1,9 @@
 import { useId } from "react";
-import { Easing, useCurrentFrame, useVideoConfig } from "remotion";
+import { Easing } from "remotion";
 import type { Timeline, TimelineEvent } from "../lib/timeline";
-import { demoTheme, msToFrame } from "./theme";
+import { demoTheme } from "./theme";
 
-type SpotlightEvent = Extract<TimelineEvent, { kind: "spotlight" }>;
+export type SpotlightEvent = Extract<TimelineEvent, { kind: "spotlight" }>;
 const [spotlightX1, spotlightY1, spotlightX2, spotlightY2] =
   demoTheme.zoom.easing;
 const spotlightEasing = Easing.bezier(
@@ -116,36 +116,16 @@ function SpotlightVisual({
   );
 }
 
-export function SpotlightEvent({
+export function SpotlightTrack({
   timeline,
   spotlight,
+  timeMs,
 }: {
   timeline: Timeline;
   spotlight: SpotlightEvent;
+  timeMs: number;
 }) {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const sequenceStartFrame = msToFrame(spotlight.t, fps);
-  const timeMs = ((frame + sequenceStartFrame) / fps) * 1_000;
-
   if (activeSpotlightAt(timeline, timeMs) !== spotlight) return null;
-
-  return (
-    <SpotlightVisual
-      timeline={timeline}
-      spotlight={spotlight}
-      timeMs={timeMs}
-    />
-  );
-}
-
-export function Spotlight({ timeline }: { timeline: Timeline }) {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const timeMs = (frame / fps) * 1_000;
-  const spotlight = activeSpotlightAt(timeline, timeMs);
-
-  if (!spotlight) return null;
 
   return (
     <SpotlightVisual

@@ -53,7 +53,11 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
 
   switch (value.kind) {
     case "caption":
-      return typeof value.text === "string" && isNumber(value.durationMs);
+      return (
+        typeof value.text === "string" &&
+        isNumber(value.durationMs) &&
+        value.durationMs >= 0
+      );
     case "cursor":
     case "click":
       return isNumber(value.x) && isNumber(value.y);

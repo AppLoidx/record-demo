@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   AbsoluteFill,
   Sequence,
@@ -15,19 +16,14 @@ import { Caption } from "./Captions";
 import { Outro, resolveOutro } from "./Outro";
 import { Screen, type WindowChrome } from "./Screen";
 import {
-  SpotlightEvent,
+  type SpotlightEvent,
+  SpotlightTrack,
   spotlightTotalDuration,
 } from "./Spotlight";
-import {
-  captureViewport,
-  demoTheme,
-  msToFrame,
-  msToFrames,
-} from "./theme";
+import { captureViewport, demoTheme, msToFrameWindow } from "./theme";
 import { resolveCameraTransform } from "./zoom";
 
 type CaptionEvent = Extract<TimelineEvent, { kind: "caption" }>;
-type SpotlightTimelineEvent = Extract<TimelineEvent, { kind: "spotlight" }>;
 type ZoomEvent = Extract<TimelineEvent, { kind: "zoom" }>;
 type OutroEvent = Extract<TimelineEvent, { kind: "outro" }>;
 
@@ -49,8 +45,7 @@ export function buildStudioTracks(
     durationMs: number,
   ): TimedTrack<T> => ({
     name,
-    from: msToFrame(event.t, fps),
-    durationInFrames: msToFrames(durationMs, fps),
+    ...msToFrameWindow(event.t, durationMs, fps),
     event,
   });
   const captions = timeline.events
@@ -63,9 +58,7 @@ export function buildStudioTracks(
       ),
     );
   const spotlights = timeline.events
-    .filter(
-      (event): event is SpotlightTimelineEvent => event.kind === "spotlight",
-    )
+    .filter((event): event is SpotlightEvent => event.kind === "spotlight")
     .map((event) =>
       timedTrack(event, "Spotlight", spotlightTotalDuration(event)),
     );
@@ -75,13 +68,12 @@ export function buildStudioTracks(
       timedTrack(
         event,
         `Zoom ${event.rect === null ? "out" : "in"}`,
-        event.durationMs,
+        Math.max(demoTheme.zoom.minimumDurationMs, event.durationMs),
       ),
     );
   const outroEvent = timeline.events.find(
     (event): event is OutroEvent => event.kind === "outro",
   );
-  const outroFrom = outroEvent ? msToFrame(outroEvent.t, fps) : 0;
 
   return {
     screen: { name: "Screen", from: 0, durationInFrames },
@@ -91,8 +83,7 @@ export function buildStudioTracks(
     outro: outroEvent
       ? {
           name: `Outro: "${outroEvent.title}"`,
-          from: outroFrom,
-          durationInFrames: Math.max(1, durationInFrames - outroFrom),
+          ...msToFrameWindow(outroEvent.t, outroEvent.durationMs, fps),
           event: outroEvent,
         }
       : undefined,
@@ -244,7 +235,10 @@ export function DemoVideo(props: DemoVideoProps) {
     1 - outro.progress * (1 - demoTheme.outro.recedeScale);
   const screenOpacity =
     1 - outro.progress * (1 - demoTheme.outro.screenOpacity);
-  const tracks = buildStudioTracks(props.timeline, fps, durationInFrames);
+  const tracks = useMemo(
+    () => buildStudioTracks(props.timeline, fps, durationInFrames),
+    [props.timeline, fps, durationInFrames],
+  );
 
   return (
     <AbsoluteFill
@@ -287,17 +281,18 @@ export function DemoVideo(props: DemoVideoProps) {
               camera={camera}
               showCursor={!outro.started}
             >
-              {tracks.spotlights.map((track, index) => (
+              {tracks.spotlights.map((track) => (
                 <Sequence
-                  key={`spotlight-${index}`}
+                  key={`spotlight-${track.event.t}`}
                   name={track.name}
                   from={track.from}
                   durationInFrames={track.durationInFrames}
                   layout="none"
                 >
-                  <SpotlightEvent
+                  <SpotlightTrack
                     timeline={props.timeline}
                     spotlight={track.event}
+                    timeMs={timeMs}
                   />
                 </Sequence>
               ))}
@@ -305,9 +300,9 @@ export function DemoVideo(props: DemoVideoProps) {
           </div>
         </div>
       </Sequence>
-      {tracks.captions.map((track, index) => (
+      {tracks.captions.map((track) => (
         <Sequence
-          key={`caption-${index}`}
+          key={`caption-${track.event.t}`}
           name={track.name}
           from={track.from}
           durationInFrames={track.durationInFrames}
@@ -318,13 +313,14 @@ export function DemoVideo(props: DemoVideoProps) {
               timeline={props.timeline}
               caption={track.event}
               bottom={layout.captionBottom}
+              timeMs={timeMs}
             />
           )}
         </Sequence>
       ))}
-      {tracks.zooms.map((track, index) => (
+      {tracks.zooms.map((track) => (
         <Sequence
-          key={`zoom-${index}`}
+          key={`zoom-${track.event.t}`}
           name={track.name}
           from={track.from}
           durationInFrames={track.durationInFrames}
@@ -333,6 +329,7 @@ export function DemoVideo(props: DemoVideoProps) {
           {null}
         </Sequence>
       ))}
+      {/* Outro ignores its Sequence offset by design; progress is resolved at the top level. */}
       {tracks.outro ? (
         <Sequence
           name={tracks.outro.name}

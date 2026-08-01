@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fixtureTimeline from "../fixtures/timeline.json";
 import type { Timeline } from "../lib/timeline";
 import { buildStudioTracks } from "../remotion/DemoVideo";
+import { msToFrameWindow } from "../remotion/theme";
 
 describe("buildStudioTracks", () => {
   it("describes one correctly named and timed track per fixture event", () => {
@@ -18,7 +19,7 @@ describe("buildStudioTracks", () => {
       {
         name: 'Caption: "Every workflow starts in con"',
         from: 0,
-        durationInFrames: 54,
+        durationInFrames: 55,
       },
       {
         name: 'Caption: "Focus follows the feature be"',
@@ -36,8 +37,8 @@ describe("buildStudioTracks", () => {
       },
     ]);
     expect(tracks.zooms.map(({ event: _event, ...track }) => track)).toEqual([
-      { name: "Zoom in", from: 38, durationInFrames: 26 },
-      { name: "Zoom out", from: 87, durationInFrames: 21 },
+      { name: "Zoom in", from: 38, durationInFrames: 99 },
+      { name: "Zoom out", from: 87, durationInFrames: 100 },
     ]);
     expect(tracks.outro).toBeUndefined();
   });
@@ -63,8 +64,67 @@ describe("buildStudioTracks", () => {
     expect(track).toEqual({
       name: 'Outro: "Any website. One storyboard."',
       from: 120,
-      durationInFrames: 30,
+      durationInFrames: 31,
       event: undefined,
     });
   });
+
+  it.each([
+    {
+      name: "integral caption",
+      kind: "caption",
+      t: 1_000,
+      durationMs: 1_000,
+      fps: 60,
+      compositionFrames: 180,
+    },
+    {
+      name: "fractional frame boundaries",
+      kind: "caption",
+      t: 125,
+      durationMs: 775,
+      fps: 30,
+      compositionFrames: 60,
+    },
+    {
+      name: "single instant",
+      kind: "caption",
+      t: 333,
+      durationMs: 0,
+      fps: 24,
+      compositionFrames: 24,
+    },
+    {
+      name: "zero-transition spotlight",
+      kind: "spotlight",
+      t: 1_000,
+      durationMs: 0,
+      holdMs: 2_000,
+      fps: 60,
+      compositionFrames: 240,
+    },
+  ] as const)(
+    "contains every old-style active frame for $name",
+    (testCase) => {
+      const { t, durationMs, fps, compositionFrames } = testCase;
+      const activeDurationMs =
+        testCase.kind === "spotlight"
+          ? durationMs * 2 + testCase.holdMs
+          : durationMs;
+      const window = msToFrameWindow(t, activeDurationMs, fps);
+
+      for (let frame = 0; frame < compositionFrames; frame += 1) {
+        const timeMs = (frame / fps) * 1_000;
+        const oldStyleVisible =
+          t <= timeMs && t + activeDurationMs >= timeMs;
+        const insideSequence =
+          frame >= window.from &&
+          frame < window.from + window.durationInFrames;
+
+        if (oldStyleVisible) {
+          expect(insideSequence, `frame ${frame}`).toBe(true);
+        }
+      }
+    },
+  );
 });

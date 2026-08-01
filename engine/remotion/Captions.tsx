@@ -1,13 +1,8 @@
-import { Easing, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+import { Easing, interpolate, useVideoConfig } from "remotion";
 import type { Timeline, TimelineEvent } from "../lib/timeline";
-import { demoTheme, msToFrame } from "./theme";
+import { demoTheme } from "./theme";
 
 type CaptionEvent = Extract<TimelineEvent, { kind: "caption" }>;
-
-type CaptionsProps = {
-  timeline: Timeline;
-  bottom: number;
-};
 
 function activeCaptionAt(timeline: Timeline, timeMs: number) {
   return timeline.events
@@ -28,8 +23,6 @@ function CaptionVisual({
   timeMs: number;
 }) {
   const { width } = useVideoConfig();
-
-  if (caption.durationMs < 0) return null;
 
   const elapsed = timeMs - caption.t;
   const remaining = caption.durationMs - elapsed;
@@ -104,24 +97,14 @@ export function Caption({
   timeline,
   caption,
   bottom,
-}: CaptionsProps & { caption: CaptionEvent }) {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const sequenceStartFrame = msToFrame(caption.t, fps);
-  const timeMs = ((frame + sequenceStartFrame) / fps) * 1_000;
-
+  timeMs,
+}: {
+  timeline: Timeline;
+  caption: CaptionEvent;
+  bottom: number;
+  timeMs: number;
+}) {
   if (activeCaptionAt(timeline, timeMs) !== caption) return null;
-
-  return <CaptionVisual caption={caption} bottom={bottom} timeMs={timeMs} />;
-}
-
-export function Captions({ timeline, bottom }: CaptionsProps) {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const timeMs = (frame / fps) * 1_000;
-  const caption = activeCaptionAt(timeline, timeMs);
-
-  if (!caption) return null;
 
   return <CaptionVisual caption={caption} bottom={bottom} timeMs={timeMs} />;
 }

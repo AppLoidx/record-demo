@@ -11,8 +11,15 @@ export function msToFrame(timeMs: number, fps: number) {
   return Math.ceil((timeMs / 1_000) * fps);
 }
 
-export function msToFrames(durationMs: number, fps: number) {
-  return Math.max(1, Math.ceil((durationMs / 1_000) * fps));
+export function msToFrameWindow(tMs: number, durationMs: number, fps: number) {
+  const from = msToFrame(tMs, fps);
+  return {
+    from,
+    durationInFrames: Math.max(
+      1,
+      Math.floor(((tMs + durationMs) / 1_000) * fps) - from + 1,
+    ),
+  };
 }
 
 export const demoTheme = {
