@@ -26,6 +26,9 @@ const { encodeGif, gifPalettePath, logGifResult } = await import(
 const { parseCliArgs } = await import("./lib/record-options.mjs");
 const { renderPresetSequence } = await import("./lib/render-presets.mjs");
 const { parseTimeline, serializeTimeline } = await import("./lib/timeline.ts");
+const { writeSynchronizedTimelines } = await import(
+  "./lib/timeline-output.mjs"
+);
 
 const demosRoot = fileURLToPath(new URL(".", import.meta.url));
 const outputDir = path.join(demosRoot, "out");
@@ -597,11 +600,11 @@ async function main() {
     })),
   };
   assertCaptureGeometry(synchronizedTimeline, demoName);
-  await writeFile(
-    timelinePath,
-    serializeTimeline(synchronizedTimeline),
-    "utf8",
-  );
+  await writeSynchronizedTimelines({
+    outputDirectory: outputDir,
+    demoName,
+    content: serializeTimeline(synchronizedTimeline),
+  });
   console.log(
     `Clapperboard run at master frame ${syncFlash.frameIndex} x${syncFlash.runLength} (trim at ${syncFlash.endTimeMs.toFixed(2)}ms).`,
   );

@@ -15,9 +15,11 @@
   "dependencies": {
     "@playwright/test": "1.62.0",
     "@remotion/cli": "4.0.499",
+    "@remotion/zod-types": "4.0.499",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "remotion": "4.0.499"
+    "remotion": "4.0.499",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
