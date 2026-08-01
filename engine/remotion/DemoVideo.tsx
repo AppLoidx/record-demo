@@ -81,11 +81,24 @@ export function buildStudioTracks(
     spotlights,
     zooms,
     outro: outroEvent
-      ? {
-          name: `Outro: "${outroEvent.title}"`,
-          ...msToFrameWindow(outroEvent.t, outroEvent.durationMs, fps),
-          event: outroEvent,
-        }
+      ? (() => {
+          // The slate must persist to the video's final frame even when the
+          // composition runs past t + durationMs (trailing capture time).
+          const window = msToFrameWindow(
+            outroEvent.t,
+            outroEvent.durationMs,
+            fps,
+          );
+          return {
+            name: `Outro: "${outroEvent.title}"`,
+            from: window.from,
+            durationInFrames: Math.max(
+              window.durationInFrames,
+              durationInFrames - window.from,
+            ),
+            event: outroEvent,
+          };
+        })()
       : undefined,
   };
 }

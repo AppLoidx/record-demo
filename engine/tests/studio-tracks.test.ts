@@ -58,13 +58,13 @@ describe("buildStudioTracks", () => {
       ],
     };
 
-    const outro = buildStudioTracks(timeline, 60, 150).outro;
+    const outro = buildStudioTracks(timeline, 60, 180).outro;
     const track = outro && { ...outro, event: undefined };
 
     expect(track).toEqual({
       name: 'Outro: "Any website. One storyboard."',
       from: 120,
-      durationInFrames: 31,
+      durationInFrames: 60,
       event: undefined,
     });
   });
