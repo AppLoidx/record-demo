@@ -17,6 +17,7 @@ type ScreenProps = {
   timeline: Timeline;
   videoSrc: string;
   camera: CameraTransform;
+  showCursor: boolean;
 };
 
 function UrlPill() {
@@ -116,6 +117,7 @@ function VideoViewport({
   videoSrc,
   camera,
   radius,
+  showCursor,
 }: {
   width: number;
   height: number;
@@ -123,6 +125,7 @@ function VideoViewport({
   videoSrc: string;
   camera: CameraTransform;
   radius: CSSProperties["borderRadius"];
+  showCursor: boolean;
 }) {
   const sourceWidth =
     timeline.viewport.width * timeline.viewport.deviceScaleFactor;
@@ -163,7 +166,7 @@ function VideoViewport({
         />
         <Spotlight timeline={timeline} />
       </div>
-      <Cursor timeline={timeline} camera={camera} />
+      {showCursor ? <Cursor timeline={timeline} camera={camera} /> : null}
     </div>
   );
 }
@@ -177,6 +180,7 @@ export function Screen({
   timeline,
   videoSrc,
   camera,
+  showCursor,
 }: ScreenProps) {
   const viewportRadius =
     chrome === "none" ? radius : `0 0 ${radius}px ${radius}px`;
@@ -202,6 +206,7 @@ export function Screen({
         videoSrc={videoSrc}
         camera={camera}
         radius={viewportRadius}
+        showCursor={showCursor}
       />
     </div>
   );

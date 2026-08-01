@@ -11,6 +11,7 @@ export type Timeline = {
     | { t: number; kind: "cursor"; x: number; y: number }
     | { t: number; kind: "click"; x: number; y: number }
     | { t: number; kind: "zoom"; rect: Rect | null; durationMs: number }
+    | { t: number; kind: "outro"; title: string; durationMs: number }
     | {
         t: number;
         kind: "spotlight";
@@ -61,6 +62,12 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
         (value.rect === null || isRect(value.rect)) &&
         isNumber(value.durationMs)
       );
+    case "outro":
+      return (
+        typeof value.title === "string" &&
+        isNumber(value.durationMs) &&
+        value.durationMs >= 0
+      );
     case "spotlight":
       return (
         isSpotlightRect(value.rect) &&
@@ -93,7 +100,10 @@ export function isTimeline(value: unknown): value is Timeline {
     isNumber(capture.syncFlashAt) &&
     isNumber(value.durationMs) &&
     Array.isArray(value.events) &&
-    value.events.every(isTimelineEvent)
+    value.events.every(isTimelineEvent) &&
+    value.events.filter(
+      (event) => isRecord(event) && event.kind === "outro",
+    ).length <= 1
   );
 }
 

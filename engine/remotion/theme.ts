@@ -104,6 +104,12 @@ export const demoTheme = {
     enterOffset: 14,
     enterScale: 0.98,
   },
+  outro: {
+    enterDurationMs: 600,
+    recedeScale: 0.94,
+    screenOpacity: 0.35,
+    titleSizeRatio: 64 / 2_560,
+  },
 } as const;
 
 export const compositionPresets = [

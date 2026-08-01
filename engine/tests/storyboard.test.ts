@@ -108,6 +108,30 @@ describe("Storyboard.spotlightOff", () => {
   });
 });
 
+describe("Storyboard.outro", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("adds the closing event before waiting for its wall time", async () => {
+    vi.spyOn(performance, "now").mockReturnValue(1_250);
+    const { page, storyboard } = createStoryboard();
+
+    await storyboard.outro("Any website. One storyboard.");
+
+    expect(storyboardEvents(storyboard)).toEqual([
+      {
+        t: 1_250,
+        kind: "outro",
+        title: "Any website. One storyboard.",
+        durationMs: 2_400,
+      },
+    ]);
+    expect(page.waitForTimeout).toHaveBeenCalledOnce();
+    expect(page.waitForTimeout).toHaveBeenCalledWith(2_400);
+  });
+});
+
 describe("Storyboard target measurement", () => {
   afterEach(() => {
     vi.restoreAllMocks();

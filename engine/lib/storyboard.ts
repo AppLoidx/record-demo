@@ -132,6 +132,16 @@ export class Storyboard {
     });
   }
 
+  async outro(title: string, durationMs = 2_400) {
+    this.events.push({
+      t: this.now(),
+      kind: "outro",
+      title,
+      durationMs,
+    });
+    await this.page.waitForTimeout(durationMs);
+  }
+
   async click(locator: Locator) {
     await locator.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
     await locator.scrollIntoViewIfNeeded();
