@@ -10,7 +10,7 @@ once, Node 22, needs `ffmpeg`, `Xvfb`, `xdpyinfo`).
 
 ## Install
 
-System dependencies: Node >= 22.13, `ffmpeg` with x11grab support, `Xvfb`,
+System dependencies: Node >= 22.18, `ffmpeg` with x11grab support, `Xvfb`,
 `xdpyinfo`, and `pnpm`.
 
 For Claude Code:
@@ -37,7 +37,7 @@ CLI, and Gemini CLI.
 ## Example
 
 A 21-second tour of wikipedia.org - search, suggestion click, article lead, an
-Apple-style spotlight on the infobox portrait, and a contents-jump - recorded and
+focus-dim spotlight on the infobox portrait, and a contents-jump - recorded and
 composited entirely by the pipeline (cursor path, zoom, spotlight, captions, end
 slate, all driven by the storyboard's timeline). Storyboard:
 [engine/scripts/wikipedia-tour.demo.ts](engine/scripts/wikipedia-tour.demo.ts).

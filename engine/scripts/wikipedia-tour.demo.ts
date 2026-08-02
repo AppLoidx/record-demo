@@ -56,6 +56,7 @@ demo("wikipedia-tour", async (d) => {
       await portrait.scrollIntoViewIfNeeded({ timeout: 5_000 });
       await d.hold(500);
       await d.spotlight([portrait], { holdMs: 2_600 });
+      await d.hold(2_600);
       d.spotlightOff();
       await d.hold(700);
     },

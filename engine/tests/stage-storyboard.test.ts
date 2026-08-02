@@ -43,6 +43,12 @@ describe("rewriteStoryboardImports", () => {
     expect(rewriteStoryboardImports(source, storyboardPath)).toBe(source);
   });
 
+  it("does not touch a scoped package named storyboard", () => {
+    const source = 'import { demo } from "@scope/storyboard";\n';
+
+    expect(rewriteStoryboardImports(source, storyboardPath)).toBe(source);
+  });
+
   it("rewrites an export-from of the storyboard module", () => {
     const source = 'export { demo } from "record-demo/storyboard";\n';
 

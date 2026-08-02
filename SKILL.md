@@ -23,8 +23,9 @@ import { demo } from "record-demo/storyboard";
 The runner rewrites this specifier to the engine's real path when staging, so the
 storyboard file can live anywhere. Editor type resolution for
 `record-demo/storyboard` comes from `engine/tsconfig.json` `paths` - outside the
-repo, add the same `paths` entry to your tsconfig or keep the file in
-`engine/scripts/`.
+repo, map `record-demo/storyboard` to the absolute
+`<skill-dir>/engine/lib/storyboard.ts` path in your tsconfig `paths`, or keep the
+file in `engine/scripts/`.
 
 Use `engine/scripts/example-site.demo.ts` as the reference. Prefer `getByRole` selectors,
 use `d.click(locator)` instead of `locator.click()`, pace actions with `d.hold(...)`, and
@@ -53,12 +54,12 @@ string passed to `demo(...)` does not need to match the output slug.
 
 When recording against a locally served checkout: `git fetch origin` in the serving
 checkout and assert `HEAD == origin/main` (or the user-named branch) — a stale checkout
-records a stale design (caught only visually on 08-01). If stale, rebuild/restart the
+records a stale design. If stale, rebuild/restart the
 server first. Print the serving SHA into the take notes so every recording is attributable.
 
 ## Record
 
-Require Node >= 22 (nvm or system), `ffmpeg`, `Xvfb`, and `xdpyinfo`. Install
+Require Node >= 22.18 (nvm or system), `ffmpeg`, `Xvfb`, and `xdpyinfo`. Install
 dependencies once inside `engine/` with `pnpm install`.
 
 ```bash

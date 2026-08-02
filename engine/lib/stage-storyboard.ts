@@ -4,7 +4,8 @@ function isStoryboardSpecifier(specifier: string) {
   const withoutExtension = specifier.replace(/\.(ts|mts|js|mjs)$/, "");
   return (
     withoutExtension === "record-demo/storyboard" ||
-    withoutExtension.endsWith("/storyboard")
+    (withoutExtension.endsWith("/storyboard") &&
+      ["./", "../", "/"].some((prefix) => withoutExtension.startsWith(prefix)))
   );
 }
 
