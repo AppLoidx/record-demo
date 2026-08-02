@@ -1,4 +1,4 @@
-import { demo } from "/home/bbx/.claude/skills/record-demo/engine/lib/storyboard";
+import { demo } from "record-demo/storyboard";
 
 demo("example-site", async (d) => {
   await d.seed(async (page) => {

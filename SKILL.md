@@ -9,14 +9,19 @@ Write an ad-hoc Playwright storyboard, then run the self-contained engine from a
 Do not add the storyboard to an application repo unless the user asks for that.
 Keep the storyboard self-contained; the runner stages that file inside the engine before
 Playwright loads it, so do not use storyboard-relative helper imports.
+`<skill-dir>` means the directory where this repository is cloned, for example
+`~/.claude/skills/record-demo`.
 
 ## Write the storyboard
 
-Import the DSL with this exact absolute import:
+Import the DSL with this portable import:
 
 ```ts
-import { demo } from "/home/bbx/.claude/skills/record-demo/engine/lib/storyboard";
+import { demo } from "record-demo/storyboard";
 ```
+
+The runner rewrites this specifier to the engine's real path when staging, so the
+storyboard file can live anywhere.
 
 Use `engine/scripts/example-site.demo.ts` as the reference. Prefer `getByRole` selectors,
 use `d.click(locator)` instead of `locator.click()`, pace actions with `d.hold(...)`, and
@@ -43,12 +48,11 @@ string passed to `demo(...)` does not need to match the output slug.
 
 ## Record
 
-Require Node 22, `ffmpeg`, `Xvfb`, and `xdpyinfo`. Install dependencies once inside
-`engine/` with `pnpm install`.
+Require Node >= 22 (nvm or system), `ffmpeg`, `Xvfb`, and `xdpyinfo`. Install
+dependencies once inside `engine/` with `pnpm install`.
 
 ```bash
-. ~/.nvm/nvm.sh && nvm use 22.22.2
-node /home/bbx/.claude/skills/record-demo/engine/record.mjs \
+node <skill-dir>/engine/record.mjs \
   --script /absolute/or/cwd-relative/demo.demo.ts \
   --url https://example.org \
   [--name output-slug] [--formats 16x9,1x1,9x16] \
@@ -75,8 +79,8 @@ a storyboard.
 Export a self-contained project after recording, then install and open Studio:
 
 ```bash
-node /home/bbx/.claude/skills/record-demo/engine/scripts/export-project.mjs <name>
-cd /home/bbx/.claude/skills/record-demo/engine/out/<name>-project
+node <skill-dir>/engine/scripts/export-project.mjs <name>
+cd <skill-dir>/engine/out/<name>-project
 pnpm install
 pnpm studio
 ```

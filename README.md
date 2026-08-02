@@ -8,6 +8,32 @@ Remotion composites cursor, zoom, spotlight and captions; outputs mp4 (raw + edi
 See SKILL.md for usage. Engine lives in `engine/` (own pnpm workspace; `pnpm install`
 once, Node 22, needs `ffmpeg`, `Xvfb`, `xdpyinfo`).
 
+## Install
+
+System dependencies: Node >= 22, `ffmpeg` with x11grab support, `Xvfb`, `xdpyinfo`,
+and `pnpm`.
+
+For Claude Code:
+
+```bash
+git clone <repo> ~/.claude/skills/record-demo
+cd ~/.claude/skills/record-demo/engine
+pnpm install
+```
+
+Claude Code discovers the skill automatically from the `SKILL.md` frontmatter.
+
+For Codex and other agent CLIs:
+
+```bash
+git clone <repo> ~/.agents/skills/record-demo
+cd ~/.agents/skills/record-demo/engine
+pnpm install
+```
+
+`~/.agents/skills` is the shared agent-skills directory recognized by Codex, Copilot
+CLI, and Gemini CLI.
+
 ## Example
 
 A 7-second tour of wikipedia.org, recorded and composited entirely by the pipeline

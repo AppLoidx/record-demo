@@ -25,6 +25,9 @@ const { encodeGif, gifPalettePath, logGifResult } = await import(
 );
 const { parseCliArgs } = await import("./lib/record-options.mjs");
 const { renderPresetSequence } = await import("./lib/render-presets.mjs");
+const { rewriteStoryboardImports } = await import(
+  "./lib/stage-storyboard.ts",
+);
 const { parseTimeline, serializeTimeline } = await import("./lib/timeline.ts");
 const { writeSynchronizedTimelines } = await import(
   "./lib/timeline-output.mjs"
@@ -521,7 +524,13 @@ async function createPlaywrightEntry(scriptPath) {
   );
   const entryPath = path.join(entryDir, "storyboard.demo.ts");
   ephemeralPaths.add(entryDir);
-  await copyFile(scriptPath, entryPath);
+  const source = await readFile(scriptPath, "utf8");
+  const storyboardPath = path.join(demosRoot, "lib", "storyboard.ts");
+  await writeFile(
+    entryPath,
+    rewriteStoryboardImports(source, storyboardPath),
+    "utf8",
+  );
   return entryPath;
 }
 
