@@ -36,7 +36,7 @@ CLI, and Gemini CLI.
 
 ## Example
 
-A 21-second tour of wikipedia.org - search, suggestion click, article lead, an
+A 23-second tour of wikipedia.org - search, suggestion click, article lead, a
 focus-dim spotlight on the infobox portrait, and a contents-jump - recorded and
 composited entirely by the pipeline (cursor path, zoom, spotlight, captions, end
 slate, all driven by the storyboard's timeline). Storyboard:
