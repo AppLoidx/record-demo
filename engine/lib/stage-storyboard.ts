@@ -1,13 +1,21 @@
 import ts from "typescript";
 
 function isStoryboardSpecifier(specifier: string) {
+  const withoutExtension = specifier.replace(/\.(ts|mts|js|mjs)$/, "");
   return (
-    specifier === "record-demo/storyboard" || specifier.endsWith("/storyboard")
+    withoutExtension === "record-demo/storyboard" ||
+    withoutExtension.endsWith("/storyboard")
   );
 }
 
 function escapeSpecifier(specifier: string, quote: string) {
   return specifier.replaceAll("\\", "\\\\").replaceAll(quote, `\\${quote}`);
+}
+
+function moduleSpecifierOf(statement: ts.Statement) {
+  if (ts.isImportDeclaration(statement)) return statement.moduleSpecifier;
+  if (ts.isExportDeclaration(statement)) return statement.moduleSpecifier;
+  return undefined;
 }
 
 export function rewriteStoryboardImports(
@@ -21,20 +29,30 @@ export function rewriteStoryboardImports(
     false,
     ts.ScriptKind.TS,
   );
-  const replacements = sourceFile.statements.flatMap((statement) => {
+  const replacements: Array<{ start: number; end: number; quote: string }> = [];
+  const collect = (node: ts.Node) => {
+    const specifier =
+      moduleSpecifierOf(node as ts.Statement) ??
+      (ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword
+        ? node.arguments[0]
+        : undefined);
     if (
-      !ts.isImportDeclaration(statement) ||
-      !ts.isStringLiteralLike(statement.moduleSpecifier) ||
-      !isStoryboardSpecifier(statement.moduleSpecifier.text)
+      specifier &&
+      ts.isStringLiteralLike(specifier) &&
+      isStoryboardSpecifier(specifier.text)
     ) {
-      return [];
+      const start = specifier.getStart(sourceFile);
+      const end = specifier.getEnd();
+      replacements.push({
+        start: start + 1,
+        end: end - 1,
+        quote: source[start] ?? '"',
+      });
     }
-
-    const start = statement.moduleSpecifier.getStart(sourceFile);
-    const end = statement.moduleSpecifier.getEnd();
-    const quote = source[start] ?? '"';
-    return [{ start: start + 1, end: end - 1, quote }];
-  });
+    ts.forEachChild(node, collect);
+  };
+  collect(sourceFile);
 
   return replacements.reduceRight(
     (rewritten, { start, end, quote }) =>

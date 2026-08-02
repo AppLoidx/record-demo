@@ -21,7 +21,10 @@ import { demo } from "record-demo/storyboard";
 ```
 
 The runner rewrites this specifier to the engine's real path when staging, so the
-storyboard file can live anywhere.
+storyboard file can live anywhere. Editor type resolution for
+`record-demo/storyboard` comes from `engine/tsconfig.json` `paths` - outside the
+repo, add the same `paths` entry to your tsconfig or keep the file in
+`engine/scripts/`.
 
 Use `engine/scripts/example-site.demo.ts` as the reference. Prefer `getByRole` selectors,
 use `d.click(locator)` instead of `locator.click()`, pace actions with `d.hold(...)`, and
