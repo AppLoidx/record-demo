@@ -1,7 +1,9 @@
-const nodeMajor = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
-if (nodeMajor < 22) {
+const [nodeMajor = 0, nodeMinor = 0] = process.versions.node
+  .split(".")
+  .map((part) => Number.parseInt(part, 10));
+if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 18)) {
   console.error(
-    `Demo recording requires Node 22 or newer (current: ${process.versions.node}). Run "nvm use" inside engine/.`,
+    `Demo recording requires Node 22.18 or newer for runtime .ts imports (current: ${process.versions.node}). Run "nvm use" inside engine/.`,
   );
   process.exit(1);
 }

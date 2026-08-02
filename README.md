@@ -6,7 +6,7 @@ Remotion composites cursor, zoom, spotlight and captions; outputs mp4 (raw + edi
 16x9) and GIF.
 
 See SKILL.md for usage. Engine lives in `engine/` (own pnpm workspace; `pnpm install`
-once, Node 22, needs `ffmpeg`, `Xvfb`, `xdpyinfo`).
+once, Node >= 22.18, needs `ffmpeg`, `Xvfb`, `xdpyinfo`).
 
 ## Install
 
