@@ -41,6 +41,13 @@ demo("storyboard-title", async (d) => {
 The engine overrides the timeline name with `--name` or the script basename, so the
 string passed to `demo(...)` does not need to match the output slug.
 
+## Preflight (before any capture)
+
+When recording against a locally served checkout: `git fetch origin` in the serving
+checkout and assert `HEAD == origin/main` (or the user-named branch) — a stale checkout
+records a stale design (caught only visually on 08-01). If stale, rebuild/restart the
+server first. Print the serving SHA into the take notes so every recording is attributable.
+
 ## Record
 
 Require Node 22, `ffmpeg`, `Xvfb`, and `xdpyinfo`. Install dependencies once inside
