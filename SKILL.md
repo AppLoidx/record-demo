@@ -91,10 +91,17 @@ Record authenticated flows only with staging or test accounts; never use product
 credentials. The agent should first log in once with its own tooling, using a headless
 Playwright script. If sign-in requires an OTP, the agent can read it through its
 available mail access or ask the user to paste it. After login, save the session with
-`await context.storageState({ path: "<account>.storage-state.json" })`, then run the
-recording command with `--storage-state <account>.storage-state.json`. Use
-`<account>.storage-state.json` as the filename convention. These files are secrets:
-they are gitignored and must never be committed or printed.
+`await context.storageState({ path: storageStatePath })`, where `storageStatePath`
+follows the
+`${XDG_STATE_HOME:-~/.local/state}/record-demo/<account>.storage-state.json`
+convention. Create the `record-demo` state directory first, then run the recording
+command with `--storage-state "$storageStatePath"`.
+
+Playwright `storageState` restores cookies and localStorage only. Apps that keep auth
+in IndexedDB or sessionStorage will silently record a logged-out screen, so verify the
+authenticated page before capturing. The storage-state file is a secret: never print
+or commit it, and delete it after recording. The one-off login helper script also holds
+credentials and must not be committed.
 
 ## Edit a recorded demo in Remotion Studio
 

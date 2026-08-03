@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { compositionPresets } from "../remotion/theme.ts";
@@ -12,6 +13,48 @@ if (!formatIds.includes(defaultFormat)) {
 
 export const usage =
   "Usage: node record.mjs --script <path> --url <absolute http(s) url> [--name <slug>] [--formats <csv>] [--chrome <none|macos|browser>] [--storage-state <path>] [--raw]";
+
+function assertStorageStateShape(storageState, storageStatePath) {
+  if (
+    storageState === null ||
+    typeof storageState !== "object" ||
+    Array.isArray(storageState) ||
+    ("cookies" in storageState && !Array.isArray(storageState.cookies)) ||
+    ("origins" in storageState && !Array.isArray(storageState.origins))
+  ) {
+    throw new Error(
+      `Storage state file must contain an object with optional cookies and origins arrays: ${storageStatePath}`,
+    );
+  }
+}
+
+function assertStorageStatePathIsSafe(storageStatePath) {
+  let workTreePath;
+  try {
+    workTreePath = execFileSync(
+      "git",
+      ["-C", path.dirname(storageStatePath), "rev-parse", "--show-toplevel"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+  } catch {
+    return;
+  }
+
+  try {
+    execFileSync(
+      "git",
+      ["-C", workTreePath, "check-ignore", "-q", "--", storageStatePath],
+      { stdio: "ignore" },
+    );
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    if (error?.status === 1) {
+      throw new Error(
+        `Storage state file is inside a Git work tree and is not ignored: ${storageStatePath}. Move it to \${XDG_STATE_HOME:-~/.local/state}/record-demo/.`,
+      );
+    }
+  }
+}
 
 export function parseCliArgs(cliArgs, cwd = process.cwd()) {
   const values = new Map();
@@ -106,13 +149,16 @@ export function parseCliArgs(cliArgs, cwd = process.cwd()) {
         `Storage state file does not exist or is not readable: ${storageStatePath}`,
       );
     }
+    let storageState;
     try {
-      JSON.parse(contents);
+      storageState = JSON.parse(contents);
     } catch {
       throw new Error(
         `Storage state file is not valid JSON: ${storageStatePath}`,
       );
     }
+    assertStorageStateShape(storageState, storageStatePath);
+    assertStorageStatePathIsSafe(storageStatePath);
   }
 
   return {

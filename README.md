@@ -62,9 +62,9 @@ paths. The clip in the next section was produced from exactly this kind of
 prompt.
 
 For authenticated staging or test sites, save the signed-in browser context as
-`<account>.storage-state.json` and pass it to the recorder with
-`--storage-state <path>`; treat that gitignored file as a secret and never commit or
-print it.
+`${XDG_STATE_HOME:-~/.local/state}/record-demo/<account>.storage-state.json` and pass
+it to the recorder with `--storage-state <path>`. Treat the file as a secret: never
+commit or print it, and delete it after recording.
 
 ## Example
 

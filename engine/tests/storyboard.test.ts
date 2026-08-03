@@ -2,6 +2,7 @@ import type { BrowserContext, Locator, Page } from "@playwright/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyStorageState,
+  launchStoryboardPage,
   Storyboard,
   unionRects,
 } from "../lib/storyboard";
@@ -45,13 +46,67 @@ function createStoryboard() {
 describe("applyStorageState", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
-  it("adds cookies and restores localStorage only for the current origin", async () => {
+  it("adds only cookies whose domain matches the target hostname", async () => {
+    const addCookies = vi.fn(async () => {});
+    const context = {
+      addCookies,
+      addInitScript: vi.fn(async () => {}),
+    } as unknown as Pick<BrowserContext, "addCookies" | "addInitScript">;
+    const matchingCookies = [
+      {
+        name: "host-session",
+        value: "host",
+        domain: "app.example.org",
+        path: "/",
+      },
+      {
+        name: "parent-session",
+        value: "parent",
+        domain: ".example.org",
+        path: "/",
+      },
+    ];
+
+    await applyStorageState(
+      context,
+      {
+        cookies: [
+          ...matchingCookies,
+          {
+            name: "unrelated-session",
+            value: "unrelated",
+            domain: "other.org",
+            path: "/",
+          },
+          {
+            name: "lookalike-session",
+            value: "lookalike",
+            domain: "notexample.org",
+            path: "/",
+          },
+        ],
+      },
+      "https://app.example.org/dashboard",
+    );
+
+    expect(addCookies).toHaveBeenCalledWith(matchingCookies);
+  });
+
+  it("restores matching localStorage once per tab", async () => {
     const setItem = vi.fn();
+    const sessionValues = new Map<string, string>();
     vi.stubGlobal("window", {
       location: { origin: "https://example.org" },
       localStorage: { setItem },
+      sessionStorage: {
+        getItem: vi.fn((name: string) => sessionValues.get(name) ?? null),
+        setItem: vi.fn((name: string, value: string) => {
+          sessionValues.set(name, value);
+        }),
+      },
     });
     let initScript:
       | ((origins: Array<{
@@ -74,14 +129,6 @@ describe("applyStorageState", () => {
       addCookies,
       addInitScript,
     } as unknown as Pick<BrowserContext, "addCookies" | "addInitScript">;
-    const cookies = [
-      {
-        name: "session",
-        value: "test-session",
-        domain: "example.org",
-        path: "/",
-      },
-    ];
     const origins = [
       {
         origin: "https://other.example.org",
@@ -96,14 +143,137 @@ describe("applyStorageState", () => {
       },
     ];
 
-    await applyStorageState(context, { cookies, origins });
+    await applyStorageState(
+      context,
+      { origins },
+      "https://example.org/dashboard",
+    );
+    initScript?.(initScriptArg ?? []);
     initScript?.(initScriptArg ?? []);
 
-    expect(addCookies).toHaveBeenCalledWith(cookies);
     expect(addInitScript).toHaveBeenCalledOnce();
     expect(setItem.mock.calls).toEqual([
       ["access-token", "test-token"],
       ["theme", "dark"],
+    ]);
+    expect(window.sessionStorage.setItem).toHaveBeenCalledOnce();
+    expect(window.sessionStorage.setItem).toHaveBeenCalledWith(
+      "__demo_storage_restored",
+      "true",
+    );
+  });
+
+  it("suppresses storage access errors from the init script", async () => {
+    vi.stubGlobal("window", {
+      location: { origin: "https://example.org" },
+      sessionStorage: {
+        getItem: vi.fn(() => null),
+        setItem: vi.fn(),
+      },
+      get localStorage() {
+        throw new Error("Storage is unavailable");
+      },
+    });
+    let initScript:
+      | ((origins: Array<{
+          origin: string;
+          localStorage?: Array<{ name: string; value: string }>;
+        }>) => void)
+      | undefined;
+    const context = {
+      addCookies: vi.fn(async () => {}),
+      addInitScript: vi.fn(async (script) => {
+        initScript = script;
+      }),
+    } as unknown as Pick<BrowserContext, "addCookies" | "addInitScript">;
+
+    await applyStorageState(
+      context,
+      {
+        origins: [
+          {
+            origin: "https://example.org",
+            localStorage: [{ name: "token", value: "secret" }],
+          },
+        ],
+      },
+      "https://example.org",
+    );
+
+    expect(() =>
+      initScript?.([
+        {
+          origin: "https://example.org",
+          localStorage: [{ name: "token", value: "secret" }],
+        },
+      ]),
+    ).not.toThrow();
+  });
+});
+
+describe("launchStoryboardPage", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("launches at about:blank, applies current env state, then visits the target", async () => {
+    vi.stubEnv("DEMO_TARGET_URL", "https://app.example.org/dashboard");
+    vi.stubEnv("DEMO_STORAGE_STATE_PATH", "/state/account.json");
+    const calls: string[] = [];
+    const page = {
+      goto: vi.fn(async (url: string) => {
+        calls.push(`goto:${url}`);
+      }),
+      on: vi.fn(),
+    } as unknown as Page;
+    const context = {
+      addCookies: vi.fn(async () => {
+        calls.push("addCookies");
+      }),
+      addInitScript: vi.fn(async () => {
+        calls.push("addInitScript");
+      }),
+      pages: vi.fn(() => {
+        calls.push("pages");
+        return [page];
+      }),
+    } as unknown as BrowserContext;
+
+    const result = await launchStoryboardPage(
+      "/chromium",
+      "/profile",
+      {
+        launchPersistentContext: vi.fn(async (_userDataDir, options) => {
+          const appArgument = options.args?.find((arg: string) =>
+            arg.startsWith("--app="),
+          );
+          calls.push(`launch:${appArgument}`);
+          return context;
+        }),
+        readStorageState: vi.fn(async () =>
+          JSON.stringify({
+            cookies: [
+              {
+                name: "session",
+                value: "test-session",
+                domain: ".example.org",
+                path: "/",
+              },
+            ],
+            origins: [],
+          }),
+        ),
+      },
+    );
+
+    expect(result).toEqual({ clientErrors: [], context, page });
+    expect(calls).toEqual([
+      "launch:--app=about:blank",
+      "addCookies",
+      "addInitScript",
+      "addInitScript",
+      "pages",
+      "goto:https://app.example.org/dashboard",
     ]);
   });
 });

@@ -1,7 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseCliArgs } from "../lib/record-options.mjs";
 
 const requiredArgs = [
@@ -19,6 +20,7 @@ async function temporaryDirectory() {
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     temporaryDirectories.splice(0).map((directory) =>
       rm(directory, { recursive: true, force: true }),
@@ -112,5 +114,81 @@ describe("parseCliArgs", () => {
         cwd,
       ),
     ).toThrowError(`Storage state file is not valid JSON: ${storageStatePath}`);
+  });
+
+  it.each([
+    ["null", null],
+    ["a number", 42],
+    ["a string", "storage state"],
+    ["an array", []],
+    ["non-array cookies", { cookies: {} }],
+    ["non-array origins", { origins: {} }],
+  ])("rejects storage state containing %s", async (_label, state) => {
+    const cwd = await temporaryDirectory();
+    const storageStatePath = path.join(cwd, "invalid-shape.json");
+    await writeFile(storageStatePath, JSON.stringify(state));
+
+    expect(() =>
+      parseCliArgs(
+        [...requiredArgs, "--storage-state", storageStatePath],
+        cwd,
+      ),
+    ).toThrowError(
+      `Storage state file must contain an object with optional cookies and origins arrays: ${storageStatePath}`,
+    );
+  });
+
+  it("rejects an unignored storage state file inside a Git work tree", async () => {
+    const cwd = await temporaryDirectory();
+    execFileSync("git", ["init", "--quiet", cwd]);
+    const storageStatePath = path.join(cwd, "account.storage-state.json");
+    await writeFile(
+      storageStatePath,
+      JSON.stringify({ cookies: [], origins: [] }),
+    );
+
+    expect(() =>
+      parseCliArgs(
+        [...requiredArgs, "--storage-state", storageStatePath],
+        cwd,
+      ),
+    ).toThrowError(
+      `Storage state file is inside a Git work tree and is not ignored: ${storageStatePath}. Move it to \${XDG_STATE_HOME:-~/.local/state}/record-demo/.`,
+    );
+  });
+
+  it("accepts an ignored storage state file inside a Git work tree", async () => {
+    const cwd = await temporaryDirectory();
+    execFileSync("git", ["init", "--quiet", cwd]);
+    await writeFile(path.join(cwd, ".gitignore"), "*.storage-state.json\n");
+    const storageStatePath = path.join(cwd, "account.storage-state.json");
+    await writeFile(
+      storageStatePath,
+      JSON.stringify({ cookies: [], origins: [] }),
+    );
+
+    const options = parseCliArgs(
+      [...requiredArgs, "--storage-state", storageStatePath],
+      cwd,
+    );
+
+    expect(options.storageStatePath).toBe(storageStatePath);
+  });
+
+  it("skips the work-tree safety check when Git is unavailable", async () => {
+    const cwd = await temporaryDirectory();
+    const storageStatePath = path.join(cwd, "account.storage-state.json");
+    await writeFile(
+      storageStatePath,
+      JSON.stringify({ cookies: [], origins: [] }),
+    );
+    vi.stubEnv("PATH", "");
+
+    const options = parseCliArgs(
+      [...requiredArgs, "--storage-state", storageStatePath],
+      cwd,
+    );
+
+    expect(options.storageStatePath).toBe(storageStatePath);
   });
 });

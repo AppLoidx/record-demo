@@ -43,10 +43,7 @@ const TARGET_STABILITY_INTERVAL_MS = 150;
 const TARGET_STABILITY_TIMEOUT_MS = 1_200;
 const demosRoot = fileURLToPath(new URL("..", import.meta.url));
 const outputPath = path.join(demosRoot, "out", "timeline.json");
-const appUrl = process.env.DEMO_TARGET_URL ?? "https://example.org";
-const baseUrl = new URL(appUrl).origin;
-const storageStatePath = process.env.DEMO_STORAGE_STATE_PATH;
-const initialAppUrl = storageStatePath ? "about:blank" : appUrl;
+const DEFAULT_APP_URL = "https://example.org";
 
 type Viewport = Timeline["viewport"];
 type StoryboardAction = (page: Page) => Promise<void>;
@@ -62,16 +59,112 @@ type StorageState = {
 export async function applyStorageState(
   context: Pick<BrowserContext, "addCookies" | "addInitScript">,
   state: StorageState,
+  targetUrl: string,
 ) {
-  await context.addCookies(state.cookies ?? []);
-  await context.addInitScript((origins) => {
-    const matchingOrigin = origins.find(
-      ({ origin }) => origin === window.location.origin,
+  const targetHostname = new URL(targetUrl).hostname.toLowerCase();
+  const matchingCookies = (state.cookies ?? []).filter(({ domain }) => {
+    if (!domain) return false;
+    const cookieDomain = domain.replace(/^\./, "").toLowerCase();
+    return (
+      targetHostname === cookieDomain ||
+      targetHostname.endsWith(`.${cookieDomain}`)
     );
-    for (const { name, value } of matchingOrigin?.localStorage ?? []) {
-      window.localStorage.setItem(name, value);
+  });
+  await context.addCookies(matchingCookies);
+  await context.addInitScript((origins) => {
+    try {
+      const restoredKey = "__demo_storage_restored";
+      if (window.sessionStorage.getItem(restoredKey) === "true") {
+        return;
+      }
+      const matchingOrigin = origins.find(
+        ({ origin }) => origin === window.location.origin,
+      );
+      for (const { name, value } of matchingOrigin?.localStorage ?? []) {
+        window.localStorage.setItem(name, value);
+      }
+      window.sessionStorage.setItem(restoredKey, "true");
+    } catch {
+      // Storage can be unavailable in opaque or partitioned contexts.
     }
   }, state.origins ?? []);
+}
+
+type LaunchPersistentContext = (
+  userDataDir: string,
+  options: Parameters<typeof chromium.launchPersistentContext>[1],
+) => Promise<BrowserContext>;
+
+type StoryboardLaunchDependencies = {
+  launchPersistentContext?: LaunchPersistentContext;
+  readStorageState?: (storageStatePath: string) => Promise<string>;
+};
+
+export async function launchStoryboardPage(
+  executablePath: string,
+  userDataDir: string,
+  dependencies: StoryboardLaunchDependencies = {},
+) {
+  const appUrl = process.env.DEMO_TARGET_URL ?? DEFAULT_APP_URL;
+  const storageStatePath = process.env.DEMO_STORAGE_STATE_PATH;
+  const initialAppUrl = storageStatePath ? "about:blank" : appUrl;
+  const launchPersistentContext =
+    dependencies.launchPersistentContext ??
+    ((directory, options) =>
+      chromium.launchPersistentContext(directory, options));
+  const readStorageState =
+    dependencies.readStorageState ??
+    ((statePath) => readFile(statePath, "utf8"));
+  const context = await launchPersistentContext(userDataDir, {
+    executablePath,
+    headless: false,
+    baseURL: new URL(appUrl).origin,
+    viewport: null,
+    args: [
+      `--app=${initialAppUrl}`,
+      "--window-position=0,0",
+      "--window-size=1920,1080",
+      "--force-device-scale-factor=1.5",
+      "--test-type",
+      "--disable-infobars",
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--no-first-run",
+      "--no-default-browser-check",
+    ],
+  });
+  const clientErrors: ClientError[] = [];
+
+  if (storageStatePath) {
+    const storageState = JSON.parse(
+      await readStorageState(storageStatePath),
+    ) as StorageState;
+    await applyStorageState(context, storageState, appUrl);
+  }
+
+  // The app's router progress bar (a 4px black strip pinned to the top) reads
+  // as a capture glitch on video. Hide it in every document this context loads,
+  // including full-page navigations mid-demo.
+  await context.addInitScript(() => {
+    const hide = () => {
+      const style = document.createElement("style");
+      style.textContent =
+        "div.fixed.top-0.z-50.h-1 { display: none !important; }";
+      document.head.append(style);
+    };
+    if (document.readyState === "loading") {
+      addEventListener("DOMContentLoaded", hide);
+    } else {
+      hide();
+    }
+  });
+
+  const page = context.pages()[0];
+  if (!page) throw new Error("Chromium app mode did not create a page");
+  captureClientErrors(page, clientErrors);
+  if (storageStatePath) await page.goto(appUrl);
+
+  return { clientErrors, context, page };
 }
 
 export function unionRects(rects: Rect[], padding = 0): Rect {
@@ -627,55 +720,12 @@ async function runStoryboard(
 ) {
   const executablePath = await resolveChromiumExecutable();
   const userDataDir = await mkdtemp(path.join(tmpdir(), "record-demo-"));
-  const context = await chromium.launchPersistentContext(userDataDir, {
+  const { clientErrors, context, page } = await launchStoryboardPage(
     executablePath,
-    headless: false,
-    baseURL: baseUrl,
-    viewport: null,
-    args: [
-      `--app=${initialAppUrl}`,
-      "--window-position=0,0",
-      "--window-size=1920,1080",
-      "--force-device-scale-factor=1.5",
-      "--test-type",
-      "--disable-infobars",
-      "--no-sandbox",
-      "--disable-dev-shm-usage",
-      "--no-first-run",
-      "--no-default-browser-check",
-    ],
-  });
-  const clientErrors: ClientError[] = [];
-
-  if (storageStatePath) {
-    const storageState = JSON.parse(
-      await readFile(storageStatePath, "utf8"),
-    ) as StorageState;
-    await applyStorageState(context, storageState);
-  }
-
-  // The app's router progress bar (a 4px black strip pinned to the top) reads
-  // as a capture glitch on video. Hide it in every document this context loads,
-  // including full-page navigations mid-demo.
-  await context.addInitScript(() => {
-    const hide = () => {
-      const style = document.createElement("style");
-      style.textContent =
-        "div.fixed.top-0.z-50.h-1 { display: none !important; }";
-      document.head.append(style);
-    };
-    if (document.readyState === "loading") {
-      addEventListener("DOMContentLoaded", hide);
-    } else {
-      hide();
-    }
-  });
+    userDataDir,
+  );
 
   try {
-    const page = context.pages()[0];
-    if (!page) throw new Error("Chromium app mode did not create a page");
-    captureClientErrors(page, clientErrors);
-    if (storageStatePath) await page.goto(appUrl);
     await page.waitForLoadState("domcontentloaded");
 
     const viewport = await readAndAssertViewport(page);
