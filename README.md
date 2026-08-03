@@ -34,6 +34,33 @@ pnpm install
 `~/.agents/skills` is the shared agent-skills directory recognized by Codex, Copilot
 CLI, and Gemini CLI.
 
+### Prompt install
+
+Paste this into your agent instead of running the commands yourself:
+
+```text
+Install the record-demo skill: clone <repo> into ~/.claude/skills/record-demo
+(Claude Code) or ~/.agents/skills/record-demo (Codex / Copilot CLI / Gemini CLI),
+then run `pnpm install` inside its engine/ directory. Verify Node >= 22.18,
+ffmpeg, Xvfb, and xdpyinfo are available, and report anything missing.
+```
+
+## Example prompt
+
+Once installed, ask your agent for a demo in plain language:
+
+```text
+Use the record-demo skill to record a ~20 second demo of https://en.wikipedia.org:
+search for "Ada Lovelace", open the article, zoom to the lead paragraph,
+spotlight the infobox portrait, then jump to a section from the contents.
+Add captions for each step and finish with an outro slate. Deliver the 16x9
+mp4 and a GIF.
+```
+
+The agent writes the storyboard, runs the pipeline, and returns the deliverable
+paths. The clip in the next section was produced from exactly this kind of
+prompt.
+
 ## Example
 
 A 23-second tour of wikipedia.org - search, suggestion click, article lead, a
