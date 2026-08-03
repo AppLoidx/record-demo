@@ -1,6 +1,10 @@
-import type { Locator, Page } from "@playwright/test";
+import type { BrowserContext, Locator, Page } from "@playwright/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Storyboard, unionRects } from "../lib/storyboard";
+import {
+  applyStorageState,
+  Storyboard,
+  unionRects,
+} from "../lib/storyboard";
 import type { Rect, TimelineEvent } from "../lib/timeline";
 
 function storyboardEvents(storyboard: Storyboard) {
@@ -37,6 +41,72 @@ function createStoryboard() {
 
   return { page, storyboard };
 }
+
+describe("applyStorageState", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("adds cookies and restores localStorage only for the current origin", async () => {
+    const setItem = vi.fn();
+    vi.stubGlobal("window", {
+      location: { origin: "https://example.org" },
+      localStorage: { setItem },
+    });
+    let initScript:
+      | ((origins: Array<{
+          origin: string;
+          localStorage?: Array<{ name: string; value: string }>;
+        }>) => void)
+      | undefined;
+    let initScriptArg:
+      | Array<{
+          origin: string;
+          localStorage?: Array<{ name: string; value: string }>;
+        }>
+      | undefined;
+    const addCookies = vi.fn(async () => {});
+    const addInitScript = vi.fn(async (script, arg) => {
+      initScript = script;
+      initScriptArg = arg;
+    });
+    const context = {
+      addCookies,
+      addInitScript,
+    } as unknown as Pick<BrowserContext, "addCookies" | "addInitScript">;
+    const cookies = [
+      {
+        name: "session",
+        value: "test-session",
+        domain: "example.org",
+        path: "/",
+      },
+    ];
+    const origins = [
+      {
+        origin: "https://other.example.org",
+        localStorage: [{ name: "ignored", value: "other" }],
+      },
+      {
+        origin: "https://example.org",
+        localStorage: [
+          { name: "access-token", value: "test-token" },
+          { name: "theme", value: "dark" },
+        ],
+      },
+    ];
+
+    await applyStorageState(context, { cookies, origins });
+    initScript?.(initScriptArg ?? []);
+
+    expect(addCookies).toHaveBeenCalledWith(cookies);
+    expect(addInitScript).toHaveBeenCalledOnce();
+    expect(setItem.mock.calls).toEqual([
+      ["access-token", "test-token"],
+      ["theme", "dark"],
+    ]);
+  });
+});
 
 describe("unionRects", () => {
   it("preserves single-box dimensions without union arithmetic", () => {

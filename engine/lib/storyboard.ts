@@ -1,6 +1,19 @@
-import { chromium, test, type Locator, type Page } from "@playwright/test";
+import {
+  chromium,
+  test,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import { constants } from "node:fs";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,10 +46,33 @@ const outputPath = path.join(demosRoot, "out", "timeline.json");
 const appUrl = process.env.DEMO_TARGET_URL ?? "https://example.org";
 const baseUrl = new URL(appUrl).origin;
 const storageStatePath = process.env.DEMO_STORAGE_STATE_PATH;
+const initialAppUrl = storageStatePath ? "about:blank" : appUrl;
 
 type Viewport = Timeline["viewport"];
 type StoryboardAction = (page: Page) => Promise<void>;
 type ClientError = { source: "console" | "pageerror"; message: string };
+type StorageState = {
+  cookies?: Parameters<BrowserContext["addCookies"]>[0];
+  origins?: Array<{
+    origin: string;
+    localStorage?: Array<{ name: string; value: string }>;
+  }>;
+};
+
+export async function applyStorageState(
+  context: Pick<BrowserContext, "addCookies" | "addInitScript">,
+  state: StorageState,
+) {
+  await context.addCookies(state.cookies ?? []);
+  await context.addInitScript((origins) => {
+    const matchingOrigin = origins.find(
+      ({ origin }) => origin === window.location.origin,
+    );
+    for (const { name, value } of matchingOrigin?.localStorage ?? []) {
+      window.localStorage.setItem(name, value);
+    }
+  }, state.origins ?? []);
+}
 
 export function unionRects(rects: Rect[], padding = 0): Rect {
   if (rects.length === 0) {
@@ -595,10 +631,9 @@ async function runStoryboard(
     executablePath,
     headless: false,
     baseURL: baseUrl,
-    ...(storageStatePath ? { storageState: storageStatePath } : {}),
     viewport: null,
     args: [
-      `--app=${appUrl}`,
+      `--app=${initialAppUrl}`,
       "--window-position=0,0",
       "--window-size=1920,1080",
       "--force-device-scale-factor=1.5",
@@ -611,6 +646,13 @@ async function runStoryboard(
     ],
   });
   const clientErrors: ClientError[] = [];
+
+  if (storageStatePath) {
+    const storageState = JSON.parse(
+      await readFile(storageStatePath, "utf8"),
+    ) as StorageState;
+    await applyStorageState(context, storageState);
+  }
 
   // The app's router progress bar (a 4px black strip pinned to the top) reads
   // as a capture glitch on video. Hide it in every document this context loads,
@@ -633,6 +675,7 @@ async function runStoryboard(
     const page = context.pages()[0];
     if (!page) throw new Error("Chromium app mode did not create a page");
     captureClientErrors(page, clientErrors);
+    if (storageStatePath) await page.goto(appUrl);
     await page.waitForLoadState("domcontentloaded");
 
     const viewport = await readAndAssertViewport(page);
