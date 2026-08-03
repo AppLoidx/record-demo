@@ -17,6 +17,7 @@ const {
   mkdtemp,
   readFile,
   rm,
+  unlink,
   writeFile,
 } = await import("node:fs/promises");
 const path = await import("node:path");
@@ -49,6 +50,7 @@ const captureFps = 30;
 const ownedChildren = new Map();
 const ephemeralPaths = new Set();
 let cleanupPromise;
+let storageStatePathToCleanup;
 
 function systemEnv(extra = {}) {
   const nodeBin = path.dirname(process.execPath);
@@ -153,9 +155,17 @@ async function cleanup() {
   return cleanupPromise;
 }
 
+async function cleanupStorageState() {
+  if (!storageStatePathToCleanup) return;
+  try {
+    await unlink(storageStatePathToCleanup);
+  } catch {}
+}
+
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.once(signal, async () => {
     console.error(`\nReceived ${signal}; cleaning up demo processes.`);
+    await cleanupStorageState();
     await cleanup();
     process.exit(signal === "SIGINT" ? 130 : 143);
   });
@@ -546,6 +556,7 @@ async function main() {
     targetUrl,
     windowChrome,
   } = parseCliArgs(process.argv.slice(2));
+  storageStatePathToCleanup = storageStatePath;
   await access(scriptPath, fsConstants.R_OK);
   if (!(await executableExists("Xvfb"))) {
     throw new Error(
@@ -682,5 +693,6 @@ try {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 } finally {
+  await cleanupStorageState();
   await cleanup();
 }

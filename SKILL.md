@@ -94,16 +94,17 @@ route is the agent's own mail access - a connected Gmail connector/MCP on Claude
 or a mail CLI on other runtimes - so it reads the code itself; otherwise ask the user
 to paste it. After login, save the session with
 `await context.storageState({ path: storageStatePath })`, where `storageStatePath`
-follows the
-`${XDG_STATE_HOME:-~/.local/state}/record-demo/<account>.storage-state.json`
-convention. Create the `record-demo` state directory first, then run the recording
-command with `--storage-state "$storageStatePath"`.
+is a one-shot temporary path created as
+`storageStatePath="$(mktemp -d)/<account>.storage-state.json"`. Then run the
+recording command with `--storage-state "$storageStatePath"`.
 
 Playwright `storageState` restores cookies and localStorage only. Apps that keep auth
 in IndexedDB or sessionStorage will silently record a logged-out screen, so verify the
 authenticated page before capturing. The storage-state file is a secret: never print
-or commit it, and delete it after recording. The one-off login helper script also holds
-credentials and must not be committed.
+or commit it. The recorder deletes it immediately after loading it; it is a one-shot
+handoff, so re-recording requires a fresh login and nothing auth-related is left on
+disk. The one-off login helper script also holds credentials: keep it temporary and
+never commit it.
 
 ## Edit a recorded demo in Remotion Studio
 

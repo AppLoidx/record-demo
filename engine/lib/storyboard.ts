@@ -12,6 +12,7 @@ import {
   mkdtemp,
   readFile,
   rm,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -98,6 +99,7 @@ type LaunchPersistentContext = (
 type StoryboardLaunchDependencies = {
   launchPersistentContext?: LaunchPersistentContext;
   readStorageState?: (storageStatePath: string) => Promise<string>;
+  unlinkStorageState?: (storageStatePath: string) => Promise<void>;
 };
 
 export async function launchStoryboardPage(
@@ -114,6 +116,7 @@ export async function launchStoryboardPage(
   const readStorageState =
     dependencies.readStorageState ??
     ((statePath) => readFile(statePath, "utf8"));
+  const unlinkStorageState = dependencies.unlinkStorageState ?? unlink;
   const context = await launchPersistentContext(userDataDir, {
     executablePath,
     headless: false,
@@ -139,9 +142,16 @@ export async function launchStoryboardPage(
   const clientErrors: ClientError[] = [];
 
   if (storageStatePath) {
-    const storageState = JSON.parse(
-      await readStorageState(storageStatePath),
-    ) as StorageState;
+    const serializedStorageState = await readStorageState(storageStatePath);
+    try {
+      await unlinkStorageState(storageStatePath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `Warning: could not delete storage state file ${storageStatePath}: ${message}`,
+      );
+    }
+    const storageState = JSON.parse(serializedStorageState) as StorageState;
     await applyStorageState(context, storageState, appUrl);
   }
 

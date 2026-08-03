@@ -153,7 +153,7 @@ describe("parseCliArgs", () => {
         cwd,
       ),
     ).toThrowError(
-      `Storage state file is inside a Git work tree and is not ignored: ${storageStatePath}. Move it to \${XDG_STATE_HOME:-~/.local/state}/record-demo/.`,
+      `Storage state file is inside a Git work tree and is not ignored: ${storageStatePath}. Move it to a temporary path created with mktemp -d.`,
     );
   });
 

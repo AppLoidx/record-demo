@@ -213,6 +213,7 @@ describe("applyStorageState", () => {
 
 describe("launchStoryboardPage", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
@@ -250,8 +251,9 @@ describe("launchStoryboardPage", () => {
           calls.push(`launch:${appArgument}`);
           return context;
         }),
-        readStorageState: vi.fn(async () =>
-          JSON.stringify({
+        readStorageState: vi.fn(async () => {
+          calls.push("readStorageState");
+          return JSON.stringify({
             cookies: [
               {
                 name: "session",
@@ -261,20 +263,57 @@ describe("launchStoryboardPage", () => {
               },
             ],
             origins: [],
-          }),
-        ),
+          });
+        }),
+        unlinkStorageState: vi.fn(async () => {
+          calls.push("unlinkStorageState");
+        }),
       },
     );
 
     expect(result).toEqual({ clientErrors: [], context, page });
     expect(calls).toEqual([
       "launch:--app=https://app.example.org/dashboard",
+      "readStorageState",
+      "unlinkStorageState",
       "addCookies",
       "addInitScript",
       "addInitScript",
       "pages",
       "goto:https://app.example.org/dashboard",
     ]);
+  });
+
+  it("warns and continues when the consumed state file cannot be deleted", async () => {
+    vi.stubEnv("DEMO_TARGET_URL", "https://app.example.org/dashboard");
+    vi.stubEnv("DEMO_STORAGE_STATE_PATH", "/state/account.json");
+    const warning = vi.spyOn(console, "error").mockImplementation(() => {});
+    const page = {
+      goto: vi.fn(async () => {}),
+      on: vi.fn(),
+    } as unknown as Page;
+    const context = {
+      addCookies: vi.fn(async () => {}),
+      addInitScript: vi.fn(async () => {}),
+      pages: vi.fn(() => [page]),
+    } as unknown as BrowserContext;
+
+    await expect(
+      launchStoryboardPage("/chromium", "/profile", {
+        launchPersistentContext: vi.fn(async () => context),
+        readStorageState: vi.fn(async () =>
+          JSON.stringify({ cookies: [], origins: [] }),
+        ),
+        unlinkStorageState: vi.fn(async () => {
+          throw new Error("permission denied");
+        }),
+      }),
+    ).resolves.toEqual({ clientErrors: [], context, page });
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /Warning: could not delete storage state file \/state\/account\.json: permission denied/,
+      ),
+    );
   });
 });
 
