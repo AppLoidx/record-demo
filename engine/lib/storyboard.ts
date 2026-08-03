@@ -32,6 +32,7 @@ const demosRoot = fileURLToPath(new URL("..", import.meta.url));
 const outputPath = path.join(demosRoot, "out", "timeline.json");
 const appUrl = process.env.DEMO_TARGET_URL ?? "https://example.org";
 const baseUrl = new URL(appUrl).origin;
+const storageStatePath = process.env.DEMO_STORAGE_STATE_PATH;
 
 type Viewport = Timeline["viewport"];
 type StoryboardAction = (page: Page) => Promise<void>;
@@ -594,6 +595,7 @@ async function runStoryboard(
     executablePath,
     headless: false,
     baseURL: baseUrl,
+    ...(storageStatePath ? { storageState: storageStatePath } : {}),
     viewport: null,
     args: [
       `--app=${appUrl}`,

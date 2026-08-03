@@ -61,6 +61,11 @@ The agent writes the storyboard, runs the pipeline, and returns the deliverable
 paths. The clip in the next section was produced from exactly this kind of
 prompt.
 
+For authenticated staging or test sites, save the signed-in browser context as
+`<account>.storage-state.json` and pass it to the recorder with
+`--storage-state <path>`; treat that gitignored file as a secret and never commit or
+print it.
+
 ## Example
 
 A 23-second tour of wikipedia.org - search, suggestion click, article lead, a

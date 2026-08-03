@@ -67,7 +67,7 @@ node <skill-dir>/engine/record.mjs \
   --script /absolute/or/cwd-relative/demo.demo.ts \
   --url https://example.org \
   [--name output-slug] [--formats 16x9,1x1,9x16] \
-  [--chrome none|macos|browser] [--raw]
+  [--chrome none|macos|browser] [--storage-state <path>] [--raw]
 ```
 
 Use `--formats` to select one or more composition presets (default `16x9`) and
@@ -84,6 +84,17 @@ Use `--raw` to stop after the clean capture. Without it, expect these deliverabl
 The runner prints absolute deliverable paths when it finishes. Treat live-site
 reproducibility as the target site's responsibility and never embed real credentials in
 a storyboard.
+
+## Authenticated sites
+
+Record authenticated flows only with staging or test accounts; never use production
+credentials. The agent should first log in once with its own tooling, using a headless
+Playwright script. If sign-in requires an OTP, the agent can read it through its
+available mail access or ask the user to paste it. After login, save the session with
+`await context.storageState({ path: "<account>.storage-state.json" })`, then run the
+recording command with `--storage-state <account>.storage-state.json`. Use
+`<account>.storage-state.json` as the filename convention. These files are secrets:
+they are gitignored and must never be committed or printed.
 
 ## Edit a recorded demo in Remotion Studio
 

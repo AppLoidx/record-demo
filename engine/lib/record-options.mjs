@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { compositionPresets } from "../remotion/theme.ts";
 
@@ -10,7 +11,7 @@ if (!formatIds.includes(defaultFormat)) {
 }
 
 export const usage =
-  "Usage: node record.mjs --script <path> --url <absolute http(s) url> [--name <slug>] [--formats <csv>] [--chrome <none|macos|browser>] [--raw]";
+  "Usage: node record.mjs --script <path> --url <absolute http(s) url> [--name <slug>] [--formats <csv>] [--chrome <none|macos|browser>] [--storage-state <path>] [--raw]";
 
 export function parseCliArgs(cliArgs, cwd = process.cwd()) {
   const values = new Map();
@@ -23,9 +24,14 @@ export function parseCliArgs(cliArgs, cwd = process.cwd()) {
       continue;
     }
     if (
-      !["--script", "--url", "--name", "--formats", "--chrome"].includes(
-        arg,
-      )
+      ![
+        "--script",
+        "--url",
+        "--name",
+        "--formats",
+        "--chrome",
+        "--storage-state",
+      ].includes(arg)
     ) {
       throw new Error(`${usage}\nUnknown argument: ${arg}`);
     }
@@ -87,11 +93,34 @@ export function parseCliArgs(cliArgs, cwd = process.cwd()) {
     );
   }
 
+  const storageStateArg = values.get("--storage-state");
+  const storageStatePath = storageStateArg
+    ? path.resolve(cwd, storageStateArg)
+    : undefined;
+  if (storageStatePath) {
+    let contents;
+    try {
+      contents = readFileSync(storageStatePath, "utf8");
+    } catch {
+      throw new Error(
+        `Storage state file does not exist or is not readable: ${storageStatePath}`,
+      );
+    }
+    try {
+      JSON.parse(contents);
+    } catch {
+      throw new Error(
+        `Storage state file is not valid JSON: ${storageStatePath}`,
+      );
+    }
+  }
+
   return {
     demoName,
     formats,
     rawOnly,
     scriptPath,
+    ...(storageStatePath ? { storageStatePath } : {}),
     targetUrl: targetUrl.toString(),
     windowChrome,
   };

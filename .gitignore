@@ -2,3 +2,4 @@ engine/node_modules/
 engine/out/
 engine/test-results/
 engine/playwright-report/
+*.storage-state.json

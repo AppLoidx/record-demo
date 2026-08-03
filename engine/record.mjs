@@ -542,6 +542,7 @@ async function main() {
     formats,
     rawOnly,
     scriptPath,
+    storageStatePath,
     targetUrl,
     windowChrome,
   } = parseCliArgs(process.argv.slice(2));
@@ -580,6 +581,9 @@ async function main() {
           DEMO_NAME: demoName,
           DEMO_PLAYWRIGHT_ENTRY_PATH: playwrightEntryPath,
           DEMO_SCRIPT_PATH: scriptPath,
+          ...(storageStatePath
+            ? { DEMO_STORAGE_STATE_PATH: storageStatePath }
+            : {}),
           DEMO_TARGET_URL: targetUrl,
         }),
       },
