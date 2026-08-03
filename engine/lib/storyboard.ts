@@ -107,7 +107,6 @@ export async function launchStoryboardPage(
 ) {
   const appUrl = process.env.DEMO_TARGET_URL ?? DEFAULT_APP_URL;
   const storageStatePath = process.env.DEMO_STORAGE_STATE_PATH;
-  const initialAppUrl = storageStatePath ? "about:blank" : appUrl;
   const launchPersistentContext =
     dependencies.launchPersistentContext ??
     ((directory, options) =>
@@ -121,7 +120,11 @@ export async function launchStoryboardPage(
     baseURL: new URL(appUrl).origin,
     viewport: null,
     args: [
-      `--app=${initialAppUrl}`,
+      // Always launch the app window on the real target: `--app=about:blank`
+      // silently degrades to a tabbed window, which eats 87 CSS px of viewport
+      // and trips the geometry assertion. The unauthenticated first paint is
+      // pre-clapperboard, so it never reaches the deliverable.
+      `--app=${appUrl}`,
       "--window-position=0,0",
       "--window-size=1920,1080",
       "--force-device-scale-factor=1.5",
@@ -162,6 +165,7 @@ export async function launchStoryboardPage(
   const page = context.pages()[0];
   if (!page) throw new Error("Chromium app mode did not create a page");
   captureClientErrors(page, clientErrors);
+  // Re-navigate so the restored cookies + localStorage take effect.
   if (storageStatePath) await page.goto(appUrl);
 
   return { clientErrors, context, page };

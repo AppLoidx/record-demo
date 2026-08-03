@@ -89,8 +89,10 @@ a storyboard.
 
 Record authenticated flows only with staging or test accounts; never use production
 credentials. The agent should first log in once with its own tooling, using a headless
-Playwright script. If sign-in requires an OTP, the agent can read it through its
-available mail access or ask the user to paste it. After login, save the session with
+Playwright script. If sign-in requires an emailed OTP or magic link, the preferred
+route is the agent's own mail access - a connected Gmail connector/MCP on Claude Code,
+or a mail CLI on other runtimes - so it reads the code itself; otherwise ask the user
+to paste it. After login, save the session with
 `await context.storageState({ path: storageStatePath })`, where `storageStatePath`
 follows the
 `${XDG_STATE_HOME:-~/.local/state}/record-demo/<account>.storage-state.json`

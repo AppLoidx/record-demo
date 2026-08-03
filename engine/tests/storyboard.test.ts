@@ -216,7 +216,7 @@ describe("launchStoryboardPage", () => {
     vi.unstubAllEnvs();
   });
 
-  it("launches at about:blank, applies current env state, then visits the target", async () => {
+  it("launches the app window on the target, applies env state, then re-navigates", async () => {
     vi.stubEnv("DEMO_TARGET_URL", "https://app.example.org/dashboard");
     vi.stubEnv("DEMO_STORAGE_STATE_PATH", "/state/account.json");
     const calls: string[] = [];
@@ -268,7 +268,7 @@ describe("launchStoryboardPage", () => {
 
     expect(result).toEqual({ clientErrors: [], context, page });
     expect(calls).toEqual([
-      "launch:--app=about:blank",
+      "launch:--app=https://app.example.org/dashboard",
       "addCookies",
       "addInitScript",
       "addInitScript",
