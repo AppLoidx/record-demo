@@ -40,7 +40,9 @@ numbers are the bar. Measure it, never copy it.
 | Time | Shot | What it proves | Cut out |
 |---|---|---|---|
 
-2-3 s per shot, and frame 0 is already the money shot.
+Keep shots short - aim for 2-3 s; a longer shot is fine when an action needs it (typing,
+a loading state). Total length follows the content; a full flow can run well past 25 s.
+Frame 0 is already the money shot.
 
 **3. Build rules.**
 - One seek clock: every pixel is a pure function of time. Overlays derive from the frame
