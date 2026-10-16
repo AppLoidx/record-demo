@@ -469,7 +469,11 @@ async function renderCompositions(
         "--fps=60",
         "--codec=h264",
         "--crf=18",
-        "--concurrency=2",
+        // Long multi-scene renders grew the compositor past 4.5 GB at concurrency 2
+        // and were OOM-killed on a 20 GB WSL box; one worker + a capped frame cache
+        // renders the same 86 s clip in ~8 min without growth.
+        "--concurrency=1",
+        "--offthreadvideo-cache-size-in-bytes=800000000",
         "--timeout=120000",
         "--muted",
         "--overwrite",
