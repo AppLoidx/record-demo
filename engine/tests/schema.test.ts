@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixtureTimeline from "../fixtures/timeline.json";
-import type { Timeline } from "../lib/timeline";
+import { parseTimeline, serializeTimeline, type Timeline } from "../lib/timeline";
 import { demoVideoSchema } from "../remotion/schema";
 
 const everyEventTimeline: Timeline = {
@@ -39,6 +39,27 @@ function propsFor(timeline: unknown) {
 }
 
 describe("demoVideoSchema", () => {
+  it.each([undefined, 0, 1_200, 3_000])(
+    "round-trips zoom duration %s through both schemas",
+    (durationMs) => {
+      const timeline: Timeline = {
+        ...everyEventTimeline,
+        events: [
+          {
+            t: 0,
+            kind: "zoom",
+            rect: null,
+            ...(durationMs === undefined ? {} : { durationMs }),
+          },
+        ],
+      };
+      expect(parseTimeline(serializeTimeline(timeline))).toEqual(timeline);
+      expect(demoVideoSchema.parse(propsFor(timeline)).timeline).toEqual(
+        timeline,
+      );
+    },
+  );
+
   it("accepts the fixture timeline", () => {
     expect(demoVideoSchema.safeParse(propsFor(fixtureTimeline)).success).toBe(
       true,

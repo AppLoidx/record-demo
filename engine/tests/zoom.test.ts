@@ -136,7 +136,7 @@ describe("resolveCameraTransform", () => {
     expect(endEdgeVelocity / peakVelocity).toBeLessThanOrEqual(0.15);
   });
 
-  it("keeps position continuous when a second zoom interrupts the first", () => {
+  it("keeps position and velocity continuous when a second zoom interrupts the first", () => {
     const fps = 60;
     const frameWidth = 2560;
     const frameHeight = 1440;
@@ -183,6 +183,12 @@ describe("resolveCameraTransform", () => {
     expect(atHandoff.translateY).toBeCloseTo(firstMoveAtHandoff.translateY);
 
     for (const field of ["scale", "translateX", "translateY"] as const) {
+      const before = cameras[handoffFrame]![field] - cameras[handoffFrame - 1]![field];
+      const after = cameras[handoffFrame + 1]![field] - cameras[handoffFrame]![field];
+      // At 60Hz the neighboring per-frame velocities may change by <10%.
+      // The frozen-start implementation lost almost 100% at this handoff.
+      expect(Math.abs(before)).toBeGreaterThan(1e-5);
+      expect(Math.abs(after - before) / Math.abs(before)).toBeLessThan(0.1);
       const handoffDelta = Math.abs(
         cameras[handoffFrame]![field] - cameras[handoffFrame - 1]![field],
       );
@@ -212,4 +218,50 @@ describe("resolveCameraTransform", () => {
     expect(settled.translateX).toBeCloseTo(expectedSettled.translateX);
     expect(settled.translateY).toBeCloseTo(expectedSettled.translateY);
   });
+
+  it("brings the target center monotonically to frame center without overshoot", () => {
+    const rect = { x: 1_100, y: 650, width: 200, height: 100 };
+    const timeline: Timeline = {
+      version: 1,
+      name: "anchored-target",
+      viewport,
+      capture: { fps: 30, syncFlashAt: 0 },
+      durationMs: 2_000,
+      events: [{ t: 0, kind: "zoom", rect, durationMs: 1_650 }],
+    };
+    const offsets = Array.from({ length: 100 }, (_, frame) => {
+      const camera = resolveCameraTransform(
+        timeline,
+        frame,
+        60,
+        2_560,
+        1_440,
+      );
+      return {
+        x:
+          (rect.x + rect.width / 2) *
+            viewport.deviceScaleFactor *
+            camera.scale +
+          camera.translateX -
+          1_280,
+        y:
+          (rect.y + rect.height / 2) *
+            viewport.deviceScaleFactor *
+            camera.scale +
+          camera.translateY -
+          720,
+      };
+    });
+    for (const field of ["x", "y"] as const) {
+      expect(offsets[0]![field]).toBeGreaterThan(0);
+      for (let index = 1; index < offsets.length; index += 1) {
+        expect(offsets[index]![field]).toBeGreaterThanOrEqual(-1e-9);
+        expect(offsets[index]![field]).toBeLessThanOrEqual(
+          offsets[index - 1]![field] + 1e-9,
+        );
+      }
+      expect(offsets.at(-1)![field]).toBeCloseTo(0, 8);
+    }
+  });
+
 });

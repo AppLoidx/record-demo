@@ -35,8 +35,7 @@ registerHooks({
   },
 });
 
-const { resolveCameraTransform } = await import("../remotion/zoom.ts");
-const { demoTheme } = await import("../remotion/theme.ts");
+const { createCameraPath } = await import("../lib/camera.ts");
 
 function percentile(values, percentileValue) {
   if (values.length === 0) return 0;
@@ -202,14 +201,12 @@ export function scoreCameraSeries(
   return { metrics, perMove, verdict };
 }
 
-function eventEnd(event) {
+function eventEnd(event, zoomDurationMs) {
   if (event.kind === "spotlight") {
     return event.t + spotlightTotalDuration(event);
   }
   if (event.kind === "zoom") {
-    return (
-      event.t + Math.max(demoTheme.zoom.minimumDurationMs, event.durationMs)
-    );
+    return event.t + zoomDurationMs;
   }
   return "durationMs" in event ? event.t + event.durationMs : undefined;
 }
@@ -232,7 +229,13 @@ function cursorTravel(cursorPoints, startMs, endMs) {
   }, 0);
 }
 
-export function detectDeadAirSpans(timeline) {
+export function detectDeadAirSpans(
+  timeline,
+  cameraPath = createCameraPath(timeline, FPS, FRAME_WIDTH, FRAME_HEIGHT),
+) {
+  const zoomDurations = new Map(
+    cameraPath.moves.map((move) => [move.event, move.durationMs]),
+  );
   const scanEndMs = Math.max(
     0,
     timeline.durationMs - DEAD_AIR_END_EXEMPTION_MS,
@@ -255,7 +258,7 @@ export function detectDeadAirSpans(timeline) {
       addActivityTime(event.t + event.durationMs);
       addActivityTime(event.t + event.durationMs + event.holdMs);
     }
-    const endMs = eventEnd(event);
+    const endMs = eventEnd(event, zoomDurations.get(event));
     if (endMs !== undefined) addActivityTime(endMs);
   }
 
@@ -295,38 +298,14 @@ export function scoreTimeline(timeline) {
     FRAME_HEIGHT / sourceHeight,
   );
   const frameCount = Math.max(1, Math.ceil((timeline.durationMs / 1_000) * FPS));
+  const cameraPath = createCameraPath(timeline, FPS, FRAME_WIDTH, FRAME_HEIGHT);
   const samples = Array.from({ length: frameCount }, (_, frame) =>
-    resolveCameraTransform(
-      timeline,
-      frame,
-      FPS,
-      FRAME_WIDTH,
-      FRAME_HEIGHT,
-    ),
+    cameraPath.atFrame(frame),
   );
-  const moves = timeline.events
-    .map((event, eventIndex) => ({ event, eventIndex }))
-    .filter(({ event }) => event.kind === "zoom")
-    .map(({ event, eventIndex }) => {
-      const durationMs = Math.max(
-        demoTheme.zoom.minimumDurationMs,
-        event.durationMs,
-      );
-      return {
-        eventIndex,
-        startMs: event.t,
-        durationMs,
-        startFrame: (event.t / 1_000) * FPS,
-        durationFrames: Math.max(
-          1,
-          Math.round((durationMs / 1_000) * FPS),
-        ),
-      };
-    });
 
   return {
-    ...scoreCameraSeries(samples, moves, FPS, baseScale, FRAME_WIDTH),
-    deadAirSpans: detectDeadAirSpans(timeline),
+    ...scoreCameraSeries(samples, cameraPath.moves, FPS, baseScale, FRAME_WIDTH),
+    deadAirSpans: detectDeadAirSpans(timeline, cameraPath),
   };
 }
 

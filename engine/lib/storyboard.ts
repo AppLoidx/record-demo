@@ -19,6 +19,7 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { moveCursor, type CursorPoint } from "./cursor";
+import { demoTheme } from "../remotion/theme";
 import {
   serializeTimeline,
   type Rect,
@@ -34,7 +35,6 @@ const EXPECTED_VIEWPORT = {
   deviceScaleFactor: 1.5,
 } as const;
 const DEFAULT_CAPTION_DURATION_MS = 2_600;
-const DEFAULT_ZOOM_DURATION_MS = 1_200;
 const DEFAULT_SPOTLIGHT_DURATION_MS = 450;
 const DEFAULT_SPOTLIGHT_HOLD_MS = 2_600;
 const CENTER_TOLERANCE_PX = 8;
@@ -298,11 +298,18 @@ export class Storyboard {
       x: target.x + target.width / 2,
       y: target.y + target.height / 2,
     };
-    await moveCursor(this.page, this.cursor, centre, (point) => {
-      this.events.push({ t: this.now(), kind: "cursor", ...point });
-    });
+    await moveCursor(
+      this.page,
+      this.cursor,
+      centre,
+      (point) => {
+        this.events.push({ t: this.now(), kind: "cursor", ...point });
+      },
+      Math.min(target.width, target.height),
+    );
     this.cursor = centre;
 
+    await this.page.waitForTimeout(demoTheme.cursor.settleDurationMs);
     await locator.click({
       position: {
         x: target.width / 2,
@@ -342,11 +349,7 @@ export class Storyboard {
       scroll?: "nearest" | "center";
     } = {},
   ) {
-    const {
-      durationMs = DEFAULT_ZOOM_DURATION_MS,
-      padding = 0,
-      scroll = "nearest",
-    } = options;
+    const { durationMs, padding = 0, scroll = "nearest" } = options;
     // Zoom rects may overflow the viewport: the camera pipeline expands them
     // to the frame's aspect ratio and clamps translation, so containment is
     // not required (the opening wide alert crop relies on this).
@@ -361,7 +364,7 @@ export class Storyboard {
       t: this.now(),
       kind: "zoom",
       rect,
-      durationMs,
+      ...(durationMs === undefined ? {} : { durationMs }),
     });
   }
 
@@ -408,12 +411,12 @@ export class Storyboard {
     throw new Error("Cannot turn off a spotlight before one has started");
   }
 
-  zoomOut(durationMs = DEFAULT_ZOOM_DURATION_MS) {
+  zoomOut(durationMs?: number) {
     this.events.push({
       t: this.now(),
       kind: "zoom",
       rect: null,
-      durationMs,
+      ...(durationMs === undefined ? {} : { durationMs }),
     });
   }
 

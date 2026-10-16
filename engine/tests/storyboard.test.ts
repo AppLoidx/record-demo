@@ -7,6 +7,7 @@ import {
   unionRects,
 } from "../lib/storyboard";
 import type { Rect, TimelineEvent } from "../lib/timeline";
+import { cursorDurationMs } from "../lib/cursor";
 
 function storyboardEvents(storyboard: Storyboard) {
   return (
@@ -475,5 +476,88 @@ describe("Storyboard target measurement", () => {
       rect: boxes.at(-1),
     });
     expect(page.waitForTimeout).toHaveBeenCalledTimes(8);
+  });
+});
+
+describe("Storyboard motion recording", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("uses the target's shorter dimension, then settles before clicking and timestamping", async () => {
+    let time = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => time);
+    let clickedAt = -1;
+    const page = {
+      waitForTimeout: vi.fn(async (delay: number) => {
+        time += delay;
+      }),
+      mouse: { move: vi.fn(async () => {}) },
+    };
+    const storyboard = new Storyboard(
+      "cursor-settle",
+      page as unknown as Page,
+      {
+        width: 1_920,
+        height: 1_080,
+        deviceScaleFactor: 1.5,
+      },
+    );
+    const target = {
+      waitFor: vi.fn(async () => {}),
+      scrollIntoViewIfNeeded: vi.fn(async () => {}),
+      boundingBox: vi.fn(async () => ({
+        x: 1_000,
+        y: 520,
+        width: 400,
+        height: 40,
+      })),
+      click: vi.fn(async () => {
+        clickedAt = time;
+        time += 7;
+      }),
+    };
+
+    await storyboard.click(target as unknown as Locator);
+
+    const events = storyboardEvents(storyboard);
+    const points = events.filter((event) => event.kind === "cursor");
+    const duration = cursorDurationMs(240, 40);
+    expect(points).toHaveLength(Math.ceil(duration / (1_000 / 60)));
+    expect(points.at(-1)).toEqual({
+      t: Math.round(duration),
+      kind: "cursor",
+      x: 1_200,
+      y: 540,
+    });
+    expect(clickedAt).toBeCloseTo(duration + 90);
+    expect(page.waitForTimeout).toHaveBeenLastCalledWith(90);
+    expect(target.click).toHaveBeenCalledWith({
+      position: { x: 200, y: 20 },
+    });
+    expect(events.at(-1)).toEqual({
+      t: Math.round(clickedAt + 7),
+      kind: "click",
+      x: 1_200,
+      y: 540,
+    });
+  });
+
+  it("omits default zoom durations and preserves explicit ones", async () => {
+    const { storyboard } = createStoryboard();
+    const target = locatorWithBoxes([
+      { x: 100, y: 200, width: 300, height: 120 },
+    ]);
+    await storyboard.zoomTo(target);
+    storyboard.zoomOut();
+    await storyboard.zoomTo(target, { durationMs: 2_100 });
+    storyboard.zoomOut(2_800);
+    const events = storyboardEvents(storyboard);
+    expect(events[0]).not.toHaveProperty("durationMs");
+    expect(events[1]).not.toHaveProperty("durationMs");
+    expect(events[2]).toMatchObject({ kind: "zoom", durationMs: 2_100 });
+    expect(events[3]).toMatchObject({
+      kind: "zoom",
+      rect: null,
+      durationMs: 2_800,
+    });
   });
 });

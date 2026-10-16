@@ -36,7 +36,7 @@ const timelineEventSchema = z.discriminatedUnion("kind", [
     t: z.number(),
     kind: z.literal("zoom"),
     rect: rectSchema.nullable(),
-    durationMs: z.number(),
+    durationMs: z.number().optional(),
   }),
   z.object({
     t: z.number(),
