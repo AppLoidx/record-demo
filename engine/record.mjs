@@ -39,6 +39,7 @@ const { writeSynchronizedTimelines } = await import(
 
 const demosRoot = fileURLToPath(new URL(".", import.meta.url));
 const outputDir = path.join(demosRoot, "out");
+const { stageWindowAssets } = await import("./lib/window-assets.mjs");
 const publicDir = path.join(demosRoot, "public");
 const timelinePath = path.join(outputDir, "timeline.json");
 const display = ":99";
@@ -452,6 +453,8 @@ async function renderCompositions(
   ephemeralPaths.add(stagedVideo);
   ephemeralPaths.add(propsPath);
 
+  const stagedWindows = await stageWindowAssets(timeline, outputDir, publicDir);
+  stagedWindows.forEach((asset) => ephemeralPaths.add(asset));
   await copyFile(videoPath, stagedVideo);
   await writeFile(
     propsPath,

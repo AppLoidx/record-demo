@@ -26,6 +26,33 @@ export function Cursor({ timeline, camera }: CursorProps) {
 
   const click = latestClick(timeline, timeMs);
   const clickAge = click ? timeMs - click.t : Number.POSITIVE_INFINITY;
+  const opacity = interpolate(
+    timeMs,
+    [position.firstAt, position.firstAt + demoTheme.cursor.enterDurationMs],
+    [0, 1],
+    {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    },
+  );
+  const deviceScaleFactor = timeline.viewport.deviceScaleFactor;
+  const x = camera.translateX + position.x * deviceScaleFactor * camera.scale;
+  const y = camera.translateY + position.y * deviceScaleFactor * camera.scale;
+
+  return <CursorVisual x={x} y={y} opacity={opacity} clickAge={clickAge} />;
+}
+
+export function CursorVisual({
+  x,
+  y,
+  opacity,
+  clickAge,
+}: {
+  x: number;
+  y: number;
+  opacity: number;
+  clickAge: number;
+}) {
   const clickScale =
     clickAge <= demoTheme.cursor.releaseDurationMs
       ? interpolate(
@@ -51,18 +78,6 @@ export function Cursor({ timeline, camera }: CursorProps) {
       extrapolateRight: "clamp",
     },
   );
-  const opacity = interpolate(
-    timeMs,
-    [position.firstAt, position.firstAt + demoTheme.cursor.enterDurationMs],
-    [0, 1],
-    {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-    },
-  );
-  const deviceScaleFactor = timeline.viewport.deviceScaleFactor;
-  const x = camera.translateX + position.x * deviceScaleFactor * camera.scale;
-  const y = camera.translateY + position.y * deviceScaleFactor * camera.scale;
 
   return (
     <div

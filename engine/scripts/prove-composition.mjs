@@ -24,6 +24,8 @@ const outputDir = path.join(demosRoot, "out");
 const publicDir = path.join(demosRoot, "public");
 const fixturePath = path.join(demosRoot, "fixtures", "timeline.json");
 const sourceName = "composition-proof-source.mp4";
+const windowName = "composition-proof-window-1.png";
+const windowPath = path.join(publicDir, windowName);
 const sourcePath = path.join(publicDir, sourceName);
 const propsPath = path.join(outputDir, "composition-proof-props.json");
 const presets = compositionPresets.map(({ id }) => id);
@@ -69,7 +71,32 @@ function run(command, args, { capture = false } = {}) {
 }
 
 async function main() {
-  const timeline = parseTimeline(await readFile(fixturePath, "utf8"));
+  await mkdir(outputDir, { recursive: true });
+  const fixture = parseTimeline(await readFile(fixturePath, "utf8"));
+  const timeline = { ...fixture, durationMs: 11000, events: [
+    ...fixture.events,
+    { t: 0, kind: "role", label: "Customer" },
+    { t: 3400, kind: "window", image: windowName, imageWidth: 1140, imageHeight: 840,
+      title: "Inbox", enterMs: 520, holdMs: 2600, exitMs: 320,
+      highlight: { x: 96, y: 504, width: 420, height: 84 }, click: true },
+    { t: 7400, kind: "transition", label: "Review the request", role: "Ops", outMs: 380, cardMs: 900, inMs: 460 },
+    { t: 8230, kind: "role", label: "Ops" },
+  ].sort((a, b) => a.t - b.t) };
+  // A real raster asset with readable content and a CTA proves image scaling and interaction.
+  const { chromium } = await import("@playwright/test");
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+  try {
+    const page = await browser.newPage({ viewport: { width: 760, height: 560 }, deviceScaleFactor: 1.5 });
+    await page.setContent(`<html><body style="margin:0;padding:64px;box-sizing:border-box;background:#fff;color:#333;font-family:Arial">
+      <div style="font-size:14px;color:#888;letter-spacing:2px">SWIPELUX · INBOX</div>
+      <h1 style="font-size:32px;margin:36px 0 20px">Your request is ready</h1>
+      <p style="font-size:20px;line-height:1.6;color:#777;max-width:540px">The team has everything they need.<br>Open your request to continue.</p>
+      <div style="position:absolute;left:64px;top:336px;width:280px;height:56px;border-radius:10px;background:#292929;color:white;display:flex;align-items:center;justify-content:center;font-size:18px">View request →</div>
+      </body></html>`);
+    await page.screenshot({ path: windowPath, scale: "device" });
+  } finally { await browser.close(); }
+  await writeFile(path.join(outputDir, "composition-proof-timeline.json"), `${JSON.stringify(timeline, null, 2)}\n`);
   const durationSeconds = Math.max(1, timeline.durationMs / 1_000 + 0.5);
   await mkdir(outputDir, { recursive: true });
 
@@ -126,6 +153,7 @@ async function main() {
       "--muted",
       "--overwrite",
       "--scale=0.25",
+      "--concurrency=2",
     ]);
 
     if ((await stat(outputPath)).size === 0) {
@@ -165,7 +193,7 @@ try {
   process.exitCode = 1;
 } finally {
   await Promise.all(
-    [sourcePath, propsPath].map((filePath) =>
+    [sourcePath, windowPath, propsPath].map((filePath) =>
       rm(filePath, { force: true }),
     ),
   );

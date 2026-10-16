@@ -1,3 +1,4 @@
+import { createSceneCameraPath } from "./scene-camera";
 import {
   chromium,
   test,
@@ -18,6 +19,11 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  WindowCapture,
+  type WindowRenderer,
+  type WindowSource,
+} from "./window-capture";
 import { moveCursor, type CursorPoint } from "./cursor";
 import { demoTheme } from "../remotion/theme";
 import {
@@ -215,11 +221,16 @@ export class Storyboard {
   private cursor: CursorPoint;
   private startedAt = 0;
   private started = false;
+  private effect: "window" | "transition" | undefined;
+  private windowCount = 0;
 
   constructor(
     private readonly name: string,
     private page: Page,
     private readonly viewport: Viewport,
+    private readonly windowCapture: WindowRenderer = new WindowCapture({
+      deviceScaleFactor: viewport.deviceScaleFactor,
+    }),
   ) {
     this.cursor = {
       x: viewport.width / 2,
@@ -284,6 +295,152 @@ export class Storyboard {
       durationMs,
     });
     await this.page.waitForTimeout(durationMs);
+  }
+
+  role(label: string) {
+    // Synchronous opening roles may precede the lazy clapperboard.
+    this.events.push({
+      t: this.startedAt === 0 ? 0 : this.now(),
+      kind: "role",
+      label,
+    });
+  }
+
+  async window(
+    source: WindowSource,
+    options: {
+      title?: string;
+      holdMs?: number;
+      width?: number;
+      height?: number;
+      highlight?: string;
+      click?: boolean;
+    } = {},
+  ) {
+    this.beginEffect("window");
+    try {
+      const {
+        title,
+        holdMs = 2600,
+        width = 760,
+        height = 560,
+        highlight,
+        click = false,
+      } = options;
+      if (
+        !Number.isFinite(holdMs) ||
+        holdMs < 0 ||
+        !Number.isInteger(width) ||
+        width <= 0 ||
+        !Number.isInteger(height) ||
+        height <= 0
+      ) {
+        throw new Error("Invalid window dimensions or holdMs");
+      }
+      const asset = await this.windowCapture.render(
+        source,
+        { width, height, highlight },
+        `${this.name}-window-${++this.windowCount}.png`,
+      );
+      await this.ensureStarted();
+      const { enterMs, exitMs } = demoTheme.window;
+      this.events.push({
+        t: this.now(),
+        kind: "window",
+        ...asset,
+        ...(title === undefined ? {} : { title }),
+        holdMs,
+        enterMs,
+        exitMs,
+        click,
+      });
+      await this.page.waitForTimeout(enterMs + holdMs + exitMs);
+    } finally {
+      this.effect = undefined;
+    }
+  }
+
+  async transition(
+    label: string,
+    action: StoryboardAction,
+    options: { role?: string; minCardMs?: number } = {},
+  ) {
+    this.beginEffect("transition");
+    const transitionEvents: TimelineEvent[] = [];
+    try {
+      const { role, minCardMs = 700 } = options;
+      if (!Number.isFinite(minCardMs) || minCardMs < 0)
+        throw new Error("Invalid transition minCardMs");
+      await this.ensureStarted();
+      const t = this.now();
+      const { outMs, inMs } = demoTheme.transition;
+      const lastZoom = this.events
+        .filter((event) => event.kind === "zoom")
+        .at(-1);
+      const camera = createSceneCameraPath(
+        {
+          version: 1,
+          name: this.name,
+          viewport: this.viewport,
+          capture: { fps: CAPTURE_FPS, syncFlashAt: 0 },
+          durationMs: t,
+          events: this.events,
+        },
+        60,
+        this.viewport.width * this.viewport.deviceScaleFactor,
+        this.viewport.height * this.viewport.deviceScaleFactor,
+      ).atFrame((t * 60) / 1000);
+      if (
+        (lastZoom?.kind === "zoom" && lastZoom.rect !== null) ||
+        camera.scale > 1 + 1e-9
+      )
+        this.events.push({ t, kind: "zoom", rect: null });
+      const event = {
+        t,
+        kind: "transition" as const,
+        label,
+        ...(role === undefined ? {} : { role }),
+        outMs,
+        cardMs: minCardMs,
+        inMs,
+      };
+      this.events.push(event);
+      transitionEvents.push(event);
+      await this.page.waitForTimeout(outMs);
+      const cardStartedAt = this.now();
+      await action(this.page);
+      const actionMs = this.now() - cardStartedAt;
+      await this.page.waitForTimeout(Math.max(0, minCardMs - actionMs));
+      event.cardMs = this.now() - cardStartedAt;
+      if (role !== undefined) {
+        const roleEvent = {
+          t: t + outMs + event.cardMs / 2,
+          kind: "role" as const,
+          label: role,
+        };
+        this.events.push(roleEvent);
+        transitionEvents.push(roleEvent);
+      }
+      await this.page.waitForTimeout(inMs);
+    } catch (error) {
+      // A caller may recover and record another effect immediately. Remove the
+      // incomplete transition so that recovery cannot overlap it in the video.
+      for (const event of transitionEvents)
+        this.events.splice(this.events.indexOf(event), 1);
+      throw error;
+    } finally {
+      this.effect = undefined;
+    }
+  }
+
+  async close() {
+    await this.windowCapture.close();
+  }
+
+  private beginEffect(kind: "window" | "transition") {
+    if (this.effect)
+      throw new Error(`Cannot overlap ${kind} with ${this.effect}`);
+    this.effect = kind;
   }
 
   async click(locator: Locator) {
@@ -748,12 +905,24 @@ async function runStoryboard(
     const viewport = await readAndAssertViewport(page);
     await page.waitForLoadState("load");
     await page.waitForTimeout(250);
-    const storyboard = new Storyboard(name, page, viewport);
+    const storyboard = new Storyboard(
+      name,
+      page,
+      viewport,
+      new WindowCapture({
+        executablePath,
+        deviceScaleFactor: viewport.deviceScaleFactor,
+      }),
+    );
 
     try {
       await action(storyboard);
     } finally {
-      await storyboard.writeTimeline();
+      try {
+        await storyboard.writeTimeline();
+      } finally {
+        await storyboard.close();
+      }
     }
   } catch (error) {
     throw storyboardFailure(error, clientErrors);

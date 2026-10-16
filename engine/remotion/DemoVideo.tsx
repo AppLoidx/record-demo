@@ -10,8 +10,13 @@ import {
   assertTimeline,
   type Timeline,
   type TimelineEvent,
+  windowTotalDuration,
+  transitionTotalDuration,
 } from "../lib/timeline";
-import { createCameraPath } from "../lib/camera";
+import { createSceneCameraPath } from "../lib/scene-camera";
+import { WindowInset, windowMotion } from "./WindowInset";
+import { Transition, transitionMotion } from "./Transition";
+import { RoleBadge } from "./RoleBadge";
 import { Background } from "./Background";
 import { Caption } from "./Captions";
 import { Outro, resolveOutro } from "./Outro";
@@ -37,7 +42,7 @@ export function buildStudioTracks(
   timeline: Timeline,
   fps: number,
   durationInFrames: number,
-  cameraPath = createCameraPath(
+  cameraPath = createSceneCameraPath(
     timeline,
     fps,
     timeline.viewport.width * timeline.viewport.deviceScaleFactor,
@@ -68,10 +73,36 @@ export function buildStudioTracks(
       timedTrack(event, "Spotlight", spotlightTotalDuration(event)),
     );
   const zooms = cameraPath.moves.map(({ event, durationMs }) =>
+    timedTrack(event, `Zoom ${event.rect === null ? "out" : "in"}`, durationMs),
+  );
+  const windows = timeline.events
+    .filter((event) => event.kind === "window")
+    .map((event) =>
+      timedTrack(
+        event,
+        `Window: ${event.title ?? ""}`,
+        windowTotalDuration(event),
+      ),
+    );
+  const transitions = timeline.events
+    .filter((event) => event.kind === "transition")
+    .map((event) =>
+      timedTrack(
+        event,
+        `Transition: ${event.label}`,
+        transitionTotalDuration(event),
+      ),
+    );
+  const roleEvents = timeline.events
+    .filter((event) => event.kind === "role")
+    .sort((a, b) => a.t - b.t);
+  const roles = roleEvents.map((event, index) =>
     timedTrack(
       event,
-      `Zoom ${event.rect === null ? "out" : "in"}`,
-      durationMs,
+      `Role: ${event.label}`,
+      (roleEvents[index + 1]?.t ?? (durationInFrames * 1000) / fps) -
+        event.t +
+        (roleEvents[index + 1] ? demoTheme.role.fadeMs : 0),
     ),
   );
   const outroEvent = timeline.events.find(
@@ -83,6 +114,9 @@ export function buildStudioTracks(
     captions,
     spotlights,
     zooms,
+    windows,
+    transitions,
+    roles,
     outro: outroEvent
       ? (() => {
           // The slate must persist to the video's final frame even when the
@@ -234,12 +268,13 @@ export function DemoVideo(props: DemoVideoProps) {
   const { fps, width, height, durationInFrames } = useVideoConfig();
   const layout = layoutFor(width, height, props.windowChrome);
   const cameraPath = useMemo(
-    () => createCameraPath(
-      props.timeline,
-      fps,
-      layout.screenWidth,
-      layout.screenHeight,
-    ),
+    () =>
+      createSceneCameraPath(
+        props.timeline,
+        fps,
+        layout.screenWidth,
+        layout.screenHeight,
+      ),
     [props.timeline, fps, layout.screenWidth, layout.screenHeight],
   );
   const camera = cameraPath.atFrame(frame);
@@ -250,8 +285,27 @@ export function DemoVideo(props: DemoVideoProps) {
   );
   const timeMs = (frame / fps) * 1_000;
   const outro = resolveOutro(props.timeline, timeMs);
-  const outroScale =
-    1 - outro.progress * (1 - demoTheme.outro.recedeScale);
+  const windowEvent = props.timeline.events.find(
+    (event) =>
+      event.kind === "window" &&
+      event.t <= timeMs &&
+      timeMs < event.t + windowTotalDuration(event),
+  );
+  const inset = windowMotion(
+    windowEvent?.kind === "window" ? windowEvent : undefined,
+    timeMs,
+  );
+  const transitionEvent = props.timeline.events.find(
+    (event) =>
+      event.kind === "transition" &&
+      event.t <= timeMs &&
+      timeMs < event.t + transitionTotalDuration(event),
+  );
+  const transition = transitionMotion(
+    transitionEvent?.kind === "transition" ? transitionEvent : undefined,
+    timeMs,
+  );
+  const outroScale = 1 - outro.progress * (1 - demoTheme.outro.recedeScale);
   const screenOpacity =
     1 - outro.progress * (1 - demoTheme.outro.screenOpacity);
   const tracks = useMemo(
@@ -284,8 +338,9 @@ export function DemoVideo(props: DemoVideoProps) {
         >
           <div
             style={{
-              opacity: screenOpacity,
-              transform: `scale(${outroScale})`,
+              opacity: screenOpacity * transition.opacity,
+              position: "relative",
+              transform: `translateX(${transition.translateX * width}px) scale(${outroScale * inset.mainScale * transition.scale})`,
               willChange: "transform, opacity",
             }}
           >
@@ -298,7 +353,7 @@ export function DemoVideo(props: DemoVideoProps) {
               timeline={props.timeline}
               videoSrc={videoSrc}
               camera={camera}
-              showCursor={!outro.started}
+              showCursor={!outro.started && !inset.active && !transition.active}
             >
               {tracks.spotlights.map((track) => (
                 <Sequence
@@ -316,9 +371,66 @@ export function DemoVideo(props: DemoVideoProps) {
                 </Sequence>
               ))}
             </Screen>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: radius,
+                background: "black",
+                opacity: inset.dim,
+                pointerEvents: "none",
+              }}
+            />
           </div>
         </div>
       </Sequence>
+      {tracks.windows.map((track) => (
+        <Sequence
+          key={`window-${track.event.t}`}
+          name={track.name}
+          from={track.from}
+          durationInFrames={track.durationInFrames}
+          layout="none"
+        >
+          <WindowInset
+            event={track.event}
+            timeMs={timeMs}
+            frameWidth={width}
+            frameHeight={height}
+          />
+        </Sequence>
+      ))}
+      {tracks.transitions.map((track) => (
+        <Sequence
+          key={`transition-${track.event.t}`}
+          name={track.name}
+          from={track.from}
+          durationInFrames={track.durationInFrames}
+          layout="none"
+        >
+          <Transition event={track.event} timeMs={timeMs} frameWidth={width} />
+        </Sequence>
+      ))}
+      <RoleBadge
+        timeline={props.timeline}
+        timeMs={timeMs}
+        outroProgress={outro.progress}
+        frameWidth={width}
+        frameHeight={height}
+        screenWidth={layout.screenWidth}
+        screenTop={layout.top}
+      />
+      {tracks.roles.map((track) => (
+        <Sequence
+          key={`role-${track.event.t}`}
+          name={track.name}
+          from={track.from}
+          durationInFrames={track.durationInFrames}
+          layout="none"
+        >
+          {null}
+        </Sequence>
+      ))}
       {tracks.captions.map((track) => (
         <Sequence
           key={`caption-${track.event.t}`}

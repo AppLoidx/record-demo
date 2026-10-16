@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { parseTimeline, spotlightTotalDuration } from "../lib/timeline.ts";
+import { parseTimeline, spotlightTotalDuration, windowTotalDuration, transitionTotalDuration } from "../lib/timeline.ts";
 
 // Match the runtime TypeScript resolution used by the motion scorer.
 registerHooks({
@@ -20,7 +20,7 @@ registerHooks({
     }
   },
 });
-const { createCameraPath } = await import("../lib/camera.ts");
+const { createSceneCameraPath } = await import("../lib/scene-camera.ts");
 const { compositionFps } = await import("../remotion/theme.ts");
 const execFileAsync = promisify(execFile);
 const engineRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -29,12 +29,14 @@ const engineRoot = fileURLToPath(new URL("../", import.meta.url));
 /** @param {import("../lib/timeline.ts").Timeline} timeline */
 export function computeFrameSheets(timeline, videoDurationMs, width = 2560, height = 1440) {
   const chronological = { ...timeline, events: [...timeline.events].sort((a, b) => a.t - b.t) };
-  const camera = createCameraPath(chronological, compositionFps, width, height);
+  const camera = createSceneCameraPath(chronological, compositionFps, width, height);
   const zoomDurations = new Map(camera.moves.map((move) => [move.event, move.durationMs]));
   return chronological.events.flatMap((event) => {
     let durationMs;
     if (event.kind === "zoom") durationMs = zoomDurations.get(event);
     else if (event.kind === "spotlight") durationMs = spotlightTotalDuration(event);
+    else if (event.kind === "window") durationMs = windowTotalDuration(event);
+    else if (event.kind === "transition") durationMs = transitionTotalDuration(event);
     else if (event.kind === "outro") durationMs = event.durationMs;
     else return [];
     const startMs = Math.min(videoDurationMs, Math.max(0, event.t - 250));

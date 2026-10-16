@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Timeline } from "../lib/timeline";
-import {
-  scoreCameraSeries,
-  scoreTimeline,
-} from "../scripts/score-motion.mjs";
+import { scoreCameraSeries, scoreTimeline } from "../scripts/score-motion.mjs";
 import { demoTheme } from "../remotion/theme";
 import { createCameraPath } from "../lib/camera";
 import fixtureTimeline from "../fixtures/timeline.json";
@@ -92,8 +89,7 @@ describe("motion scoring", () => {
       { scale: 1, translateX: 0, translateY: 0 },
       ...Array.from({ length: 61 }, (_, frame) => {
         const time = frame / 60;
-        const progress =
-          6 * time ** 5 - 15 * time ** 4 + 10 * time ** 3;
+        const progress = 6 * time ** 5 - 15 * time ** 4 + 10 * time ** 3;
         return {
           scale: 1 + progress * 0.2,
           translateX: progress * -200,
@@ -124,6 +120,34 @@ describe("motion scoring", () => {
     expect(score.perMove[0]?.edgeVerdict).toBe("PASS");
     expect(score.perMove[0]?.discontinuityVerdict).toBe("PASS");
     expect(score.verdict).toBe("PASS");
+  });
+
+  it("exempts hidden card resets while still failing visible jumps", () => {
+    const moves = [
+      {
+        eventIndex: 0,
+        startMs: 0,
+        durationMs: 1000,
+        startFrame: 0,
+        durationFrames: 59,
+      },
+    ];
+    const samples = Array.from({ length: 60 }, (_, frame) => ({
+      scale: frame >= 20 ? 1.2 : 1,
+      translateX: 0,
+      translateY: 0,
+    }));
+    const hidden = (frame: number) => frame >= 20 && frame <= 30;
+    expect(scoreCameraSeries(samples, moves, 60, 1, 2560, hidden).verdict).toBe(
+      "PASS",
+    );
+    const visibleJump = samples.map((sample, frame) => ({
+      ...sample,
+      scale: frame >= 45 ? 1.4 : sample.scale,
+    }));
+    expect(
+      scoreCameraSeries(visibleJump, moves, 60, 1, 2560, hidden).verdict,
+    ).toBe("FAIL");
   });
 
   it("fails a hard-edged linear camera move", () => {

@@ -6,6 +6,8 @@ import { cursorPositionFromPoints } from "../lib/cursor-position.ts";
 import {
   parseTimeline,
   spotlightTotalDuration,
+  windowTotalDuration,
+  transitionTotalDuration,
 } from "../lib/timeline.ts";
 
 // Static stretches at or above this duration read as dead air.
@@ -35,7 +37,7 @@ registerHooks({
   },
 });
 
-const { createCameraPath } = await import("../lib/camera.ts");
+const { createSceneCameraPath } = await import("../lib/scene-camera.ts");
 
 function percentile(values, percentileValue) {
   if (values.length === 0) return 0;
@@ -70,12 +72,14 @@ function vectorDistance(left, right) {
 
 const stationaryVelocity = { zoom: 0, panX: 0, panY: 0 };
 
+/** @param {(frame: number) => boolean} [hiddenFrame] Fully masked camera frames. */
 export function scoreCameraSeries(
   samples,
   moves,
   fps,
   baseScale,
   frameWidth,
+  hiddenFrame = () => false,
 ) {
   const velocities = samples.slice(1).map((sample, index) => {
     const previous = samples[index];
@@ -85,6 +89,7 @@ export function scoreCameraSeries(
 
     return {
       frame: index + 1,
+      hidden: hiddenFrame(index) || hiddenFrame(index + 1),
       zoom,
       panX,
       panY,
@@ -92,10 +97,11 @@ export function scoreCameraSeries(
       panFrameWidthsPerSecond: Math.hypot(panX, panY),
     };
   });
-  const relativeZoomRates = velocities.map(
+  const visibleVelocities = velocities.filter((velocity) => !velocity.hidden);
+  const relativeZoomRates = visibleVelocities.map(
     (velocity) => velocity.relativeZoomRate,
   );
-  const panFrameRates = velocities.map(
+  const panFrameRates = visibleVelocities.map(
     (velocity) => velocity.panFrameWidthsPerSecond,
   );
   const relativeZoomRateMax = Math.max(0, ...relativeZoomRates);
@@ -103,7 +109,7 @@ export function scoreCameraSeries(
 
   const perMove = moves.map((move) => {
     const endFrame = move.startFrame + move.durationFrames;
-    const active = velocities.filter(
+    const active = visibleVelocities.filter(
       (velocity) =>
         velocity.frame > move.startFrame && velocity.frame <= endFrame,
     );
@@ -128,19 +134,29 @@ export function scoreCameraSeries(
     const after =
       velocities.find((velocity) => velocity.frame > endFrame) ??
       stationaryVelocity;
-    const velocityWindow = [before, ...active, after];
+    const velocityWindow = [
+      before,
+      ...velocities.filter(
+        (velocity) =>
+          velocity.frame > move.startFrame && velocity.frame <= endFrame,
+      ),
+      after,
+    ];
     const maxVelocityJump = Math.max(
       0,
-      ...velocityWindow.slice(1).map((velocity, index) =>
-        vectorDistance(velocityWindow[index], velocity),
-      ),
+      ...velocityWindow
+        .slice(1)
+        .map((velocity, index) =>
+          velocity.hidden || velocityWindow[index].hidden
+            ? 0
+            : vectorDistance(velocityWindow[index], velocity),
+        ),
     );
     const maxVelocityJumpRatio =
       peakVelocity === 0 ? 0 : maxVelocityJump / peakVelocity;
     const edgeVerdict =
       startEdgeRatio <= 0.15 && endEdgeRatio <= 0.15 ? "PASS" : "WARN";
-    const discontinuityVerdict =
-      maxVelocityJumpRatio > 0.5 ? "FAIL" : "PASS";
+    const discontinuityVerdict = maxVelocityJumpRatio > 0.5 ? "FAIL" : "PASS";
 
     return {
       eventIndex: move.eventIndex,
@@ -180,9 +196,7 @@ export function scoreCameraSeries(
       0,
       ...perMove.map((move) => move.maxVelocityJumpRatio),
     ),
-    verdict: perMove.some(
-      (move) => move.discontinuityVerdict === "FAIL",
-    )
+    verdict: perMove.some((move) => move.discontinuityVerdict === "FAIL")
       ? "FAIL"
       : "PASS",
   };
@@ -202,6 +216,9 @@ export function scoreCameraSeries(
 }
 
 function eventEnd(event, zoomDurationMs) {
+  if (event.kind === "window") return event.t + windowTotalDuration(event);
+  if (event.kind === "transition")
+    return event.t + transitionTotalDuration(event);
   if (event.kind === "spotlight") {
     return event.t + spotlightTotalDuration(event);
   }
@@ -222,16 +239,13 @@ function cursorTravel(cursorPoints, startMs, endMs) {
 
   return positions.slice(1).reduce((total, position, index) => {
     const previous = positions[index];
-    return total + Math.hypot(
-      position.x - previous.x,
-      position.y - previous.y,
-    );
+    return total + Math.hypot(position.x - previous.x, position.y - previous.y);
   }, 0);
 }
 
 export function detectDeadAirSpans(
   timeline,
-  cameraPath = createCameraPath(timeline, FPS, FRAME_WIDTH, FRAME_HEIGHT),
+  cameraPath = createSceneCameraPath(timeline, FPS, FRAME_WIDTH, FRAME_HEIGHT),
 ) {
   const zoomDurations = new Map(
     cameraPath.moves.map((move) => [move.event, move.durationMs]),
@@ -258,6 +272,14 @@ export function detectDeadAirSpans(
       addActivityTime(event.t + event.durationMs);
       addActivityTime(event.t + event.durationMs + event.holdMs);
     }
+    if (event.kind === "window") {
+      addActivityTime(event.t + event.enterMs);
+      addActivityTime(event.t + event.enterMs + event.holdMs);
+    }
+    if (event.kind === "transition") {
+      addActivityTime(event.t + event.outMs);
+      addActivityTime(event.t + event.outMs + event.cardMs);
+    }
     const endMs = eventEnd(event, zoomDurations.get(event));
     if (endMs !== undefined) addActivityTime(endMs);
   }
@@ -279,7 +301,16 @@ export function detectDeadAirSpans(
     if (
       durationMs < DEAD_AIR_THRESHOLD_MS ||
       travel >= DEAD_AIR_CURSOR_TRAVEL_PX ||
-      overlapsOutro
+      overlapsOutro ||
+      timeline.events.some(
+        (event) =>
+          (event.kind === "window" &&
+            startMs >= event.t &&
+            endMs <= event.t + windowTotalDuration(event)) ||
+          (event.kind === "transition" &&
+            startMs >= event.t &&
+            endMs <= event.t + transitionTotalDuration(event)),
+      )
     ) {
       return [];
     }
@@ -297,14 +328,35 @@ export function scoreTimeline(timeline) {
     FRAME_WIDTH / sourceWidth,
     FRAME_HEIGHT / sourceHeight,
   );
-  const frameCount = Math.max(1, Math.ceil((timeline.durationMs / 1_000) * FPS));
-  const cameraPath = createCameraPath(timeline, FPS, FRAME_WIDTH, FRAME_HEIGHT);
+  const frameCount = Math.max(
+    1,
+    Math.ceil((timeline.durationMs / 1_000) * FPS),
+  );
+  const cameraPath = createSceneCameraPath(
+    timeline,
+    FPS,
+    FRAME_WIDTH,
+    FRAME_HEIGHT,
+  );
   const samples = Array.from({ length: frameCount }, (_, frame) =>
     cameraPath.atFrame(frame),
   );
 
   return {
-    ...scoreCameraSeries(samples, cameraPath.moves, FPS, baseScale, FRAME_WIDTH),
+    ...scoreCameraSeries(
+      samples,
+      cameraPath.moves,
+      FPS,
+      baseScale,
+      FRAME_WIDTH,
+      (frame) =>
+        timeline.events.some(
+          (event) =>
+            event.kind === "transition" &&
+            (frame * 1000) / FPS >= event.t + event.outMs &&
+            (frame * 1000) / FPS <= event.t + event.outMs + event.cardMs,
+        ),
+    ),
     deadAirSpans: detectDeadAirSpans(timeline, cameraPath),
   };
 }

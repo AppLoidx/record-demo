@@ -14,6 +14,29 @@ const spotlightRectSchema = rectSchema.extend({
 });
 
 const timelineEventSchema = z.discriminatedUnion("kind", [
+  z.object({ t: z.number(), kind: z.literal("role"), label: z.string() }),
+  z.object({
+    t: z.number(),
+    kind: z.literal("window"),
+    image: z.string().min(1),
+    imageWidth: z.number().positive(),
+    imageHeight: z.number().positive(),
+    title: z.string().optional(),
+    holdMs: z.number().nonnegative(),
+    enterMs: z.number().nonnegative(),
+    exitMs: z.number().nonnegative(),
+    highlight: spotlightRectSchema.optional(),
+    click: z.boolean().optional(),
+  }),
+  z.object({
+    t: z.number(),
+    kind: z.literal("transition"),
+    label: z.string(),
+    role: z.string().optional(),
+    outMs: z.number().nonnegative(),
+    cardMs: z.number().nonnegative(),
+    inMs: z.number().nonnegative(),
+  }),
   z.object({
     t: z.number(),
     kind: z.literal("cursor"),

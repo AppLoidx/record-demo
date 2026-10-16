@@ -95,6 +95,8 @@ describe("exportProject", () => {
       "fixtures/timeline.json",
       "lib/camera.ts",
       "lib/cursor-position.ts",
+      "lib/cursor.ts",
+      "lib/scene-camera.ts",
       "lib/timeline.ts",
       "package.json",
       "pnpm-workspace.yaml",
@@ -106,9 +108,12 @@ describe("exportProject", () => {
       "remotion/Cursor.tsx",
       "remotion/DemoVideo.tsx",
       "remotion/Outro.tsx",
+      "remotion/RoleBadge.tsx",
       "remotion/Root.tsx",
       "remotion/Screen.tsx",
       "remotion/Spotlight.tsx",
+      "remotion/Transition.tsx",
+      "remotion/WindowInset.tsx",
       "remotion/schema.ts",
       "remotion/theme.ts",
       "remotion/zoom.ts",
@@ -204,4 +209,46 @@ describe("exportProject", () => {
       }),
     ).rejects.toThrow(`${missingPath} is missing; record synthetic-demo first`);
   });
+});
+
+it("exports every referenced window PNG alongside the video", async () => {
+  const temporaryRoot = await temporaryDirectory();
+  const outputDirectory = path.join(temporaryRoot, "project");
+  const artifactsDirectory = path.join(temporaryRoot, "out");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(artifactsDirectory, { recursive: true });
+  const image = "synthetic-demo-window-1.png";
+  const png = Buffer.from("window-png-stub");
+  await writeFile(path.join(artifactsDirectory, image), png);
+  await writeFile(
+    path.join(artifactsDirectory, "synthetic-demo-trimmed-master.mp4"),
+    "video-stub",
+  );
+  await writeFile(
+    path.join(artifactsDirectory, "synthetic-demo-timeline.json"),
+    JSON.stringify({
+      ...fixtureTimeline,
+      events: [
+        {
+          t: 0,
+          kind: "window",
+          image,
+          imageWidth: 1140,
+          imageHeight: 840,
+          enterMs: 520,
+          holdMs: 2600,
+          exitMs: 320,
+        },
+      ],
+    }),
+  );
+  await exportProject({
+    name: "synthetic-demo",
+    engineRoot,
+    artifactsDirectory,
+    outputDirectory,
+  });
+  expect(await readFile(path.join(outputDirectory, "public", image))).toEqual(
+    png,
+  );
 });

@@ -7,6 +7,29 @@ export type Timeline = {
   capture: { fps: number; syncFlashAt: number };
   durationMs: number;
   events: Array<
+    | { t: number; kind: "role"; label: string }
+    | {
+        t: number;
+        kind: "window";
+        image: string;
+        imageWidth: number;
+        imageHeight: number;
+        title?: string;
+        holdMs: number;
+        enterMs: number;
+        exitMs: number;
+        highlight?: Rect;
+        click?: boolean;
+      }
+    | {
+        t: number;
+        kind: "transition";
+        label: string;
+        role?: string;
+        outMs: number;
+        cardMs: number;
+        inMs: number;
+      }
     | { t: number; kind: "caption"; text: string; durationMs: number }
     | { t: number; kind: "cursor"; x: number; y: number }
     | { t: number; kind: "click"; x: number; y: number }
@@ -23,6 +46,17 @@ export type Timeline = {
 };
 
 export type TimelineEvent = Timeline["events"][number];
+
+export type WindowEvent = Extract<TimelineEvent, { kind: "window" }>;
+export type TransitionEvent = Extract<TimelineEvent, { kind: "transition" }>;
+export type RoleEvent = Extract<TimelineEvent, { kind: "role" }>;
+
+export function windowTotalDuration(event: WindowEvent) {
+  return event.enterMs + event.holdMs + event.exitMs;
+}
+export function transitionTotalDuration(event: TransitionEvent) {
+  return event.outMs + event.cardMs + event.inMs;
+}
 
 export type SpotlightEvent = Extract<TimelineEvent, { kind: "spotlight" }>;
 
@@ -58,6 +92,31 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
   }
 
   switch (value.kind) {
+    case "role":
+      return typeof value.label === "string";
+    case "window":
+      return (
+        typeof value.image === "string" &&
+        value.image.length > 0 &&
+        isNumber(value.imageWidth) &&
+        value.imageWidth > 0 &&
+        isNumber(value.imageHeight) &&
+        value.imageHeight > 0 &&
+        (value.title === undefined || typeof value.title === "string") &&
+        [value.holdMs, value.enterMs, value.exitMs].every(
+          (n) => isNumber(n) && n >= 0,
+        ) &&
+        (value.highlight === undefined || isSpotlightRect(value.highlight)) &&
+        (value.click === undefined || typeof value.click === "boolean")
+      );
+    case "transition":
+      return (
+        typeof value.label === "string" &&
+        (value.role === undefined || typeof value.role === "string") &&
+        [value.outMs, value.cardMs, value.inMs].every(
+          (n) => isNumber(n) && n >= 0,
+        )
+      );
     case "caption":
       return (
         typeof value.text === "string" &&
@@ -111,9 +170,8 @@ export function isTimeline(value: unknown): value is Timeline {
     isNumber(value.durationMs) &&
     Array.isArray(value.events) &&
     value.events.every(isTimelineEvent) &&
-    value.events.filter(
-      (event) => isRecord(event) && event.kind === "outro",
-    ).length <= 1
+    value.events.filter((event) => isRecord(event) && event.kind === "outro")
+      .length <= 1
   );
 }
 

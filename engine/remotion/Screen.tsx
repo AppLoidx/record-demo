@@ -46,10 +46,12 @@ function UrlPill() {
   );
 }
 
-function ChromeBar({
+export function ChromeBar({
   variant,
   height,
+  title,
 }: {
+  title?: string;
   variant: Exclude<WindowChrome, "none">;
   height: number;
 }) {
@@ -105,7 +107,24 @@ function ChromeBar({
           <span>›</span>
         </div>
       )}
-      <UrlPill />
+      {title === undefined ? (
+        <UrlPill />
+      ) : (
+        <div
+          style={{
+            maxWidth: "65%",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
+            fontFamily: demoTheme.fontFamily,
+            fontSize: 16,
+            fontWeight: 500,
+            color: demoTheme.colors.contentSecondary,
+          }}
+        >
+          {title}
+        </div>
+      )}
     </div>
   );
 }
