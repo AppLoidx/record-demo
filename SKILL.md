@@ -6,6 +6,29 @@ description: Record a scripted screen-capture demo of any live website with Play
 
 # Record demo videos
 
+## Role and bar
+
+You are the senior motion designer on this clip. The bar is an Apple-level product video:
+premium, calm, deliberate. A take ships only when every line below holds; otherwise
+re-pace and re-record.
+
+- **Real product, real artifacts.** Real app screens, real templates (emails, pages)
+  rendered with demo data. Never a look-alike.
+- **One thing moves at a time**, and every move lands before the next starts (see
+  Choreography).
+- **Compositions are centered and intentional.** Re-frame after every layout change; never
+  leave a stale zoom on a new page.
+- **Type is designed, not dropped in.** Chapter cards and captions use the kinetic
+  entrances; text never sits on top of busy UI.
+- **Emphasis adds meaning.** Callouts and highlights only for information not already on
+  screen; highlights are soft filled areas with inner space, never thin outlines.
+- **Actions feel real.** Loading and disabled states are visible after every submit; nothing
+  vanishes the instant it is clicked.
+- **Unhurried pacing.** Give each result a beat to read; a slightly longer clip beats a
+  rushed one.
+
+## How it works
+
 Write an ad-hoc Playwright storyboard, then run the self-contained engine from any cwd.
 Do not add the storyboard to an application repo unless the user asks for that.
 Keep the storyboard self-contained; the runner stages that file inside the engine before
