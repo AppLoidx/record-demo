@@ -174,7 +174,7 @@ keep the clip legible:
 
 - **Warm every route in `seed`** (visit each URL once, `waitForLoadState("load")` plus about
   1s). Cold dev-server compiles during capture stall the screen. Never wait on
-  `networkidle`: dev servers keep sockets open and each wait burns 30s of the 180s test budget.
+  `networkidle`: dev servers keep sockets open and each wait burns 30s of the 300s test budget.
 - **Rename on-screen fixture names at the data source** (the mock fixtures), not by editing
   DOM text. A MutationObserver text rewrite causes hydration mismatches and breaks
   interactive widgets (observed: a file upload silently ignored files).
