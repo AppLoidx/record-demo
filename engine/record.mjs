@@ -23,6 +23,8 @@ const {
 const path = await import("node:path");
 const { fileURLToPath } = await import("node:url");
 const { findClapperboardFrame } = await import("./lib/clapperboard.ts");
+const { correctCaptureTimeMs, remotionSourceArgs } = await import("./lib/capture-timing.ts");
+const { readCaptureClockSteps } = await import("./lib/capture-clock.mjs");
 const { encodeGif, gifPalettePath, logGifResult } = await import(
   "./lib/gif.mjs"
 );
@@ -409,33 +411,13 @@ function assertCaptureGeometry(timeline, demoName) {
   }
 }
 
-async function createRemotionSource(masterPath, outputPath, syncFlashAt) {
+async function createRemotionSource(masterPath, outputPath, syncFlashAt, clockSteps) {
   console.log(
     `Trimming master at ${syncFlashAt.toFixed(2)}ms and transcoding for Remotion.`,
   );
   await runCommand(
     "ffmpeg",
-    [
-      "-y",
-      "-i",
-      masterPath,
-      "-ss",
-      (syncFlashAt / 1_000).toFixed(9),
-      "-an",
-      "-c:v",
-      "libx264",
-      "-preset",
-      "slow",
-      "-crf",
-      "0",
-      "-pix_fmt",
-      "yuv420p",
-      "-vf",
-      `setpts=PTS-STARTPTS,fps=${captureFps}`,
-      "-movflags",
-      "+faststart",
-      outputPath,
-    ],
+    remotionSourceArgs(masterPath, outputPath, syncFlashAt, clockSteps, captureFps),
     { name: "Remotion source transcode", cwd: demosRoot, env: systemEnv() },
   );
 }
@@ -594,17 +576,19 @@ async function main() {
 
   const timeline = parseTimeline(await readFile(timelinePath, "utf8"));
   assertCaptureGeometry(timeline, demoName);
+  const clockSteps = await readCaptureClockSteps(masterPath, captureFps, runCaptured);
   const syncFlash = await detectSyncFlash(masterPath);
+  const syncFlashAt = correctCaptureTimeMs(syncFlash.endTimeMs, clockSteps);
   // Trim at the END of the sentinel run so no green frame reaches the render.
   // Storyboard event times are measured from the flash start, so shift them
   // back by the measured flash duration to stay aligned with the picture.
-  const flashDurationMs = syncFlash.endTimeMs - syncFlash.timeMs;
+  const flashDurationMs = syncFlashAt - correctCaptureTimeMs(syncFlash.timeMs, clockSteps);
   const synchronizedTimeline = {
     ...timeline,
     durationMs: Math.max(0, timeline.durationMs - flashDurationMs),
     capture: {
       ...timeline.capture,
-      syncFlashAt: syncFlash.endTimeMs,
+      syncFlashAt,
     },
     events: timeline.events.map((event) => ({
       ...event,
@@ -618,7 +602,7 @@ async function main() {
     content: serializeTimeline(synchronizedTimeline),
   });
   console.log(
-    `Clapperboard run at master frame ${syncFlash.frameIndex} x${syncFlash.runLength} (trim at ${syncFlash.endTimeMs.toFixed(2)}ms).`,
+    `Clapperboard run at master frame ${syncFlash.frameIndex} x${syncFlash.runLength} (trim at ${syncFlashAt.toFixed(2)}ms).`,
   );
 
   const trimmedMasterPath = path.join(
@@ -628,7 +612,8 @@ async function main() {
   await createRemotionSource(
     masterPath,
     trimmedMasterPath,
-    syncFlash.endTimeMs,
+    syncFlashAt,
+    clockSteps,
   );
 
   // The raw deliverable: the clean capture, no zoom/cursor/caption edit.
