@@ -5,8 +5,56 @@ import {
   scoreTimeline,
 } from "../scripts/score-motion.mjs";
 import { demoTheme } from "../remotion/theme";
+import { createCameraPath } from "../lib/camera";
+import fixtureTimeline from "../fixtures/timeline.json";
 
 describe("motion scoring", () => {
+  it("keeps the existing overlapping fixture free of discontinuities", () => {
+    const score = scoreTimeline(fixtureTimeline as Timeline);
+    expect(score.metrics.smoothness.verdict).toBe("PASS");
+    expect(score.verdict).not.toBe("FAIL");
+  });
+
+  it("samples the rendered live camera path and reports its auto durations", () => {
+    const timeline: Timeline = {
+      ...(fixtureTimeline as Timeline),
+      durationMs: 6_000,
+      events: [
+        {
+          t: 200,
+          kind: "zoom",
+          rect: { x: 700, y: 400, width: 400, height: 225 },
+        },
+        { t: 700, kind: "zoom", rect: null },
+        {
+          t: 1_000,
+          kind: "zoom",
+          rect: { x: 1_200, y: 650, width: 300, height: 200 },
+        },
+      ],
+    };
+    const path = createCameraPath(timeline, 60, 2_560, 1_440);
+    const expected = scoreCameraSeries(
+      Array.from({ length: 360 }, (_, frame) => path.atFrame(frame)),
+      path.moves,
+      60,
+      8 / 9,
+      2_560,
+    );
+    const score = scoreTimeline(timeline);
+    expect(score.metrics).toEqual(expected.metrics);
+    expect(score.metrics.cameraMoves.durationsMs).toEqual(
+      path.moves.map((move) => move.durationMs),
+    );
+    expect(score.metrics.smoothness.verdict).toBe("PASS");
+    expect(score.verdict).not.toBe("FAIL");
+    expect(
+      path.moves.every(
+        (move) => move.durationMs >= 1_650 && move.durationMs <= 2_400,
+      ),
+    ).toBe(true);
+  });
+
   it("simulates a timeline and reports its camera move duration", () => {
     const timeline: Timeline = {
       version: 1,

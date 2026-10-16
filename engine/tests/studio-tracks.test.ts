@@ -3,8 +3,33 @@ import fixtureTimeline from "../fixtures/timeline.json";
 import type { Timeline } from "../lib/timeline";
 import { buildStudioTracks } from "../remotion/DemoVideo";
 import { msToFrameWindow } from "../remotion/theme";
+import { createCameraPath } from "../lib/camera";
 
 describe("buildStudioTracks", () => {
+  it("uses the rendered auto duration for zoom tracks at each output aspect", () => {
+    const timeline: Timeline = {
+      ...(fixtureTimeline as Timeline),
+      events: [
+        {
+          t: 200,
+          kind: "zoom",
+          rect: { x: 800, y: 400, width: 400, height: 225 },
+        },
+      ],
+    };
+    for (const [width, height] of [
+      [2_560, 1_440],
+      [1_440, 1_440],
+      [1_080, 1_920],
+    ]) {
+      const path = createCameraPath(timeline, 60, width!, height!);
+      const tracks = buildStudioTracks(timeline, 60, 120, path);
+      expect(tracks.zooms[0]).toMatchObject(
+        msToFrameWindow(200, path.moves[0]!.durationMs, 60),
+      );
+    }
+  });
+
   it("describes one correctly named and timed track per fixture event", () => {
     const tracks = buildStudioTracks(fixtureTimeline as Timeline, 60, 120);
 

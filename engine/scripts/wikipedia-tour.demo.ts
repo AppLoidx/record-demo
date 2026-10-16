@@ -14,6 +14,7 @@ demo("wikipedia-tour", async (d) => {
     async (page) => {
       const searchInput = page.locator("#searchInput");
       await d.zoomTo(searchInput, { padding: 140 });
+      await d.hold(1_900);
       await d.click(searchInput);
       await d.type("Ada Lovelace", 55);
       await page.locator(".suggestion-link").first().waitFor({ timeout: 10_000 });
@@ -27,7 +28,7 @@ demo("wikipedia-tour", async (d) => {
     async (page) => {
       const suggestion = page.locator(".suggestion-link").first();
       d.zoomOut();
-      await d.hold(700);
+      await d.hold(2_000);
       await d.click(suggestion);
       await page.locator("#firstHeading").waitFor({ timeout: 20_000 });
       await d.hold(1_400);
@@ -43,7 +44,7 @@ demo("wikipedia-tour", async (d) => {
       await d.zoomTo([heading, lead], { padding: 64 });
       await d.hold(2_600);
       d.zoomOut();
-      await d.hold(800);
+      await d.hold(1_500);
     },
     3_200,
   );
@@ -78,7 +79,7 @@ demo("wikipedia-tour", async (d) => {
       await d.zoomTo(sectionHeading, { padding: 160, scroll: "center" });
       await d.hold(2_400);
       d.zoomOut();
-      await d.hold(1_000);
+      await d.hold(2_000);
       await sectionHeading.waitFor({ state: "visible" });
     },
     3_600,

@@ -10,7 +10,7 @@ export type Timeline = {
     | { t: number; kind: "caption"; text: string; durationMs: number }
     | { t: number; kind: "cursor"; x: number; y: number }
     | { t: number; kind: "click"; x: number; y: number }
-    | { t: number; kind: "zoom"; rect: Rect | null; durationMs: number }
+    | { t: number; kind: "zoom"; rect: Rect | null; durationMs?: number }
     | { t: number; kind: "outro"; title: string; durationMs: number }
     | {
         t: number;
@@ -70,7 +70,7 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
     case "zoom":
       return (
         (value.rect === null || isRect(value.rect)) &&
-        isNumber(value.durationMs)
+        (value.durationMs === undefined || isNumber(value.durationMs))
       );
     case "outro":
       return (

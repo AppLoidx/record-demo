@@ -11,6 +11,7 @@ import {
   type Timeline,
   type TimelineEvent,
 } from "../lib/timeline";
+import { createCameraPath } from "../lib/camera";
 import { Background } from "./Background";
 import { Caption } from "./Captions";
 import { Outro, resolveOutro } from "./Outro";
@@ -21,10 +22,8 @@ import {
   spotlightTotalDuration,
 } from "./Spotlight";
 import { captureViewport, demoTheme, msToFrameWindow } from "./theme";
-import { resolveCameraTransform } from "./zoom";
 
 type CaptionEvent = Extract<TimelineEvent, { kind: "caption" }>;
-type ZoomEvent = Extract<TimelineEvent, { kind: "zoom" }>;
 type OutroEvent = Extract<TimelineEvent, { kind: "outro" }>;
 
 type TimedTrack<T extends TimelineEvent> = {
@@ -38,6 +37,12 @@ export function buildStudioTracks(
   timeline: Timeline,
   fps: number,
   durationInFrames: number,
+  cameraPath = createCameraPath(
+    timeline,
+    fps,
+    timeline.viewport.width * timeline.viewport.deviceScaleFactor,
+    timeline.viewport.height * timeline.viewport.deviceScaleFactor,
+  ),
 ) {
   const timedTrack = <T extends TimelineEvent>(
     event: T,
@@ -62,15 +67,13 @@ export function buildStudioTracks(
     .map((event) =>
       timedTrack(event, "Spotlight", spotlightTotalDuration(event)),
     );
-  const zooms = timeline.events
-    .filter((event): event is ZoomEvent => event.kind === "zoom")
-    .map((event) =>
-      timedTrack(
-        event,
-        `Zoom ${event.rect === null ? "out" : "in"}`,
-        Math.max(demoTheme.zoom.minimumDurationMs, event.durationMs),
-      ),
-    );
+  const zooms = cameraPath.moves.map(({ event, durationMs }) =>
+    timedTrack(
+      event,
+      `Zoom ${event.rect === null ? "out" : "in"}`,
+      durationMs,
+    ),
+  );
   const outroEvent = timeline.events.find(
     (event): event is OutroEvent => event.kind === "outro",
   );
@@ -230,13 +233,16 @@ export function DemoVideo(props: DemoVideoProps) {
   const frame = useCurrentFrame();
   const { fps, width, height, durationInFrames } = useVideoConfig();
   const layout = layoutFor(width, height, props.windowChrome);
-  const camera = resolveCameraTransform(
-    props.timeline,
-    frame,
-    fps,
-    layout.screenWidth,
-    layout.screenHeight,
+  const cameraPath = useMemo(
+    () => createCameraPath(
+      props.timeline,
+      fps,
+      layout.screenWidth,
+      layout.screenHeight,
+    ),
+    [props.timeline, fps, layout.screenWidth, layout.screenHeight],
   );
+  const camera = cameraPath.atFrame(frame);
   const videoSrc = resolveVideoSrc(props.videoSrc);
   const radius = Math.max(
     demoTheme.layout.minimumWindowRadius,
@@ -249,8 +255,8 @@ export function DemoVideo(props: DemoVideoProps) {
   const screenOpacity =
     1 - outro.progress * (1 - demoTheme.outro.screenOpacity);
   const tracks = useMemo(
-    () => buildStudioTracks(props.timeline, fps, durationInFrames),
-    [props.timeline, fps, durationInFrames],
+    () => buildStudioTracks(props.timeline, fps, durationInFrames, cameraPath),
+    [props.timeline, fps, durationInFrames, cameraPath],
   );
 
   return (

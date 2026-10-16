@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Timeline } from "../lib/timeline";
 import { detectDeadAirSpans } from "../scripts/score-motion.mjs";
+import { createCameraPath } from "../lib/camera";
 
 function timeline(
   durationMs: number,
@@ -17,6 +18,21 @@ function timeline(
 }
 
 describe("dead-air detection", () => {
+  it("uses resolved auto zoom duration as an activity boundary", () => {
+    const subject = timeline(7_000, [
+      {
+        t: 0,
+        kind: "zoom",
+        rect: { x: 700, y: 400, width: 400, height: 225 },
+      },
+    ]);
+    const duration = createCameraPath(subject, 60, 2_560, 1_440).moves[0]!
+      .durationMs;
+    expect(detectDeadAirSpans(subject)).toEqual([
+      { startMs: duration, durationMs: 6_000 - duration, verdict: "WARN" },
+    ]);
+  });
+
   it("flags a five-second static gap", () => {
     const result = detectDeadAirSpans(
       timeline(6_000, [

@@ -83,6 +83,8 @@ export const demoTheme = {
     padding: 96,
     maximumScale: 1.45,
     minimumDurationMs: 1_650,
+    autoDurationExtraMs: 750,
+    autoDurationTravel: 1.5,
     // easeInOutCubic: symmetric gentle start/stop, the screen-recording norm.
     // Springs start at peak acceleration, which reads as an edgy camera cut.
     easing: [0.65, 0, 0.35, 1],
@@ -96,6 +98,17 @@ export const demoTheme = {
     ringWidth: 1.5,
   },
   cursor: {
+    moveBaseDurationMs: 250,
+    moveDistanceDurationMs: 150,
+    minimumTargetSize: 24,
+    minimumMoveDurationMs: 260,
+    maximumMoveDurationMs: 950,
+    minimumMoveDistance: 2,
+    arcDistanceRatio: 0.08,
+    maximumArcOffset: 60,
+    moveEasing: [0.3, 0, 0.15, 1],
+    sampleFps: 60,
+    settleDurationMs: 90,
     containerSize: 38,
     pointerWidth: 34,
     pointerHeight: 38,
