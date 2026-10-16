@@ -146,6 +146,34 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
 - A scene with nothing to Act on (read-only reveal) is Frame + Cue + a hold long enough to
   read the caption (~2s) or a spotlight.
 
+## Multi-actor stories: windows, transitions, roles
+
+For flows that cross people or apps (customer app -> email -> ops tool), three effects
+keep the clip legible:
+
+| Effect | Storyboard | Use for |
+|---|---|---|
+| Second window | `await d.window({ html } \| { url }, { title, holdMs, highlight, click })` | An email, notification or second app rising over the screen; `highlight` + `click` sends a cursor to that element |
+| Scene transition | `await d.transition(label, async (page) => { ...switch... }, { role })` | Masking a switch between apps or a slow page load; the action runs while the label card shows |
+| Role badge | `d.role("Customer")`, or `role` on a transition | Naming whose perspective is on screen |
+
+- Window content must be the real artifact: render the product's own template (for example
+  the real email renderer with demo inputs). Never hand-write a look-alike.
+- Do slow, ugly work (page loads, prefilling a long form, resetting mock state) inside a
+  transition action, not on camera.
+- Transitions reset the camera to wide; do not `zoomOut()` right before one.
+
+## Recording local apps (dev servers, mocks)
+
+- **Warm every route in `seed`** (visit each URL once, `waitForLoadState("load")` plus about
+  1s). Cold dev-server compiles during capture stall the screen. Never wait on
+  `networkidle`: dev servers keep sockets open and each wait burns 30s of the 180s test budget.
+- **Rename on-screen fixture names at the data source** (the mock fixtures), not by editing
+  DOM text. A MutationObserver text rewrite causes hydration mismatches and breaks
+  interactive widgets (observed: a file upload silently ignored files).
+- **Dev-mode widgets hydrate late.** Retry setting a file on `input[type=file]` until the
+  file chip shows, rather than trusting one `setInputFiles` right after load.
+
 ## Motion and storyboard rules (what makes a clip postable)
 
 - **One camera move per scene, not per field.** Zoom once to the section, act inside it.
@@ -171,8 +199,8 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
 - **Always assert the end state** - without it the pipeline renders a polished video of
   a broken flow.
 - Never ship a clip with a localhost URL, internal hostname, provider name, or real
-  credentials on screen. Mask presentation-only strings in the seed (window.open patch and a
-  MutationObserver input rewrite).
+  credentials on screen. Prefer renaming at the data source; a seed-time DOM rewrite
+  (window.open patch, MutationObserver) is only safe on static or non-hydrated pages.
 
 ## Verify before reporting done
 
@@ -186,7 +214,7 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
    and read the frames. Zoom clipping, caption lag, cutout desync and on-screen dev URLs
    are invisible in a green test run.
 5. **Review every move as a frame sheet**: `node scripts/frame-sheets.mjs <name>` writes one
-   contact sheet per zoom, spotlight and outro to `out/sheets/` (12 frames at 8fps spanning
+   contact sheet per zoom, spotlight, window, transition and outro to `out/sheets/` (12 frames at 8fps spanning
    the move). Read each sheet and check, frame by frame:
 
    | Check | Fail looks like |
@@ -207,6 +235,7 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
 | `Invalid demo viewport ...` abort | Geometry drifted - fix launch flags, never relax the assertion. |
 | Cursor offset ~174px vertically | Chrome ran tabbed, not `--app`. |
 | Could not find clapperboard frames | Detector tolerance is 64 (external captures average impure); if it still misses, check the capture isn't black (Chrome on wrong DISPLAY). |
+| Captions/cursor land over the wrong screen after ~30s (WSL) | The VM wall clock steps ahead ~2.5s every ~32s; the runner removes these steps from capture timing (log line "Clock step at master ..."). If drift persists, compare frames against timeline events before blaming the storyboard. |
 | Captions/cursor drift over the clip | Clapperboard sync - don't wall-clock subtract. |
 | Spotlight cutout off its target | Rect raced a smooth scroll - measureTarget's stability loop should hold; if it recurs, raise its timeout. |
 | Words cut mid-letter at crop edge | `zoomTo(locator, { padding: 120 })` for modals. |
