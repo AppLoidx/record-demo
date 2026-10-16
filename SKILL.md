@@ -27,6 +27,54 @@ re-pace and re-record.
 - **Unhurried pacing.** Give each result a beat to read; a slightly longer clip beats a
   rushed one.
 
+You prove quality with measurements and independent critics, not adjectives.
+
+## Quality process
+
+**1. Reference -> numbers.** Read the reference frame by frame and turn it into numbers: cut
+rhythm, camera speeds, the hero motion curve, type size and timing, stage colour. Those
+numbers are the bar. Measure it, never copy it.
+
+**2. Storyboard first.** One table before any capture:
+
+| Time | Shot | What it proves | Cut out |
+|---|---|---|---|
+
+2-3 s per shot, and frame 0 is already the money shot.
+
+**3. Build rules.**
+- One seek clock: every pixel is a pure function of time. Overlays derive from the frame
+  number only - no state, `Date`, or randomness (Remotion compositions already work this way).
+- Build every element (each overlay, each shot, the type) alone in its own lab before it
+  joins the film: its own composition or proof render, checked frame by frame.
+- Overlays and type are code; the screen here is a real capture. Every threshold is a
+  crossfade - hard switches flash for a frame.
+
+**4. Critic loop.**
+- Builder and critic are always separate agents. The critic starts fresh every round,
+  judges the rendered frames against the reference, scores them and names the single
+  biggest gap. The builder fixes only that.
+- Blind test: mix your frames with the reference's. If a judge can tell which is which, it
+  is not done.
+- Wow gate: split the film into 3 s windows. Every one must be a yes.
+
+**5. Sound.** One real track, lined up so its own final hit lands on the end card and
+played as one continuous piece; cut on its beat. A clean, real sound on every small move,
+with the hero moments clearly audible. Not supported yet: the engine renders muted, and the
+track must come from the user (licensing). Until then, ship silent and say so.
+
+**6. Measure, then watch like the client.** Render at 60 fps and measure:
+
+```bash
+ffmpeg -i out/<name>-16x9.mp4 -vf freezedetect=n=0.001:d=0.5 -an -f null - 2>&1 | grep freeze_   # frozen frames
+ffmpeg -i out/<name>-16x9.mp4 -vf blackdetect=d=0.05:pix_th=0.10 -an -f null - 2>&1 | grep black_  # black frames
+ffmpeg -i out/<name>-16x9.mp4 -af ebur128 -f null - 2>&1 | tail -12                                 # loudness (when audio exists)
+```
+
+One-frame pops: compare adjacent frames in the frame sheets and at every transition boundary
+(the engine tests enforce continuity; the render must too). Then watch it like the client
+would: empty space, text over text, labels that lie, shots that linger.
+
 ## How it works
 
 Write an ad-hoc Playwright storyboard, then run the self-contained engine from any cwd.
