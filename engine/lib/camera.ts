@@ -115,13 +115,41 @@ function fullViewportRect(viewport: Timeline["viewport"]): Rect {
   return { x: 0, y: 0, width: viewport.width, height: viewport.height };
 }
 
-// Resolve durations once, from the LIVE previous path at each move's start.
-// The renderer, Studio tracks, and motion scorer all use this same path.
+// Resolve timing in capture-source space, independently of output cropping.
+// Each format then uses the same durations with its own windows and targets.
 export function createCameraPath(
   timeline: Timeline,
   fps: number,
   frameWidth: number,
   frameHeight: number,
+) {
+  const sourceWidth =
+    timeline.viewport.width * timeline.viewport.deviceScaleFactor;
+  const sourceHeight =
+    timeline.viewport.height * timeline.viewport.deviceScaleFactor;
+  const reference = buildCameraPath(
+    timeline,
+    fps,
+    sourceWidth,
+    sourceHeight,
+  );
+  if (frameWidth === sourceWidth && frameHeight === sourceHeight)
+    return reference;
+  return buildCameraPath(
+    timeline,
+    fps,
+    frameWidth,
+    frameHeight,
+    reference.moves.map((move) => move.durationMs),
+  );
+}
+
+function buildCameraPath(
+  timeline: Timeline,
+  fps: number,
+  frameWidth: number,
+  frameHeight: number,
+  resolvedDurations?: readonly number[],
 ) {
   const wide = fullViewportRect(timeline.viewport);
   const initial = cameraWindow(
@@ -137,7 +165,6 @@ export function createCameraPath(
   for (const [eventIndex, event] of timeline.events.entries()) {
     if (event.kind !== "zoom") continue;
     const startFrame = (event.t / 1_000) * fps;
-    const start = evaluateWindow(initial, moves, startFrame);
     const target = cameraWindow(
       calculateCameraTransform(
         event.rect ?? wide,
@@ -148,9 +175,15 @@ export function createCameraPath(
       frameWidth,
     );
     const durationMs =
-      event.durationMs === undefined
-        ? autoZoomDurationMs(start, target, frameWidth / frameHeight)
-        : Math.max(demoTheme.zoom.minimumDurationMs, event.durationMs);
+      resolvedDurations !== undefined
+        ? resolvedDurations[moves.length]!
+        : event.durationMs === undefined
+          ? autoZoomDurationMs(
+              evaluateWindow(initial, moves, startFrame),
+              target,
+              frameWidth / frameHeight,
+            )
+          : Math.max(demoTheme.zoom.minimumDurationMs, event.durationMs);
     moves.push({
       event,
       eventIndex,

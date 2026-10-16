@@ -7,6 +7,9 @@ import {
   windowTransform,
 } from "../lib/camera";
 import type { Timeline } from "../lib/timeline";
+import { buildStudioTracks, layoutFor } from "../remotion/DemoVideo";
+import { compositionPresets, msToFrameWindow } from "../remotion/theme";
+import { scoreTimeline } from "../scripts/score-motion.mjs";
 
 const viewport = { width: 1_920, height: 1_080, deviceScaleFactor: 1.5 };
 const timeline = (events: Timeline["events"]): Timeline => ({
@@ -86,6 +89,47 @@ describe("camera windows", () => {
 });
 
 describe("camera durations", () => {
+  it("resolves the same capture-reference durations for all output formats", () => {
+    const subject = timeline([
+      {
+        t: 1_000,
+        kind: "zoom",
+        rect: { x: 100, y: 100, width: 400, height: 200 },
+      },
+      {
+        t: 4_000,
+        kind: "zoom",
+        rect: { x: 1_300, y: 700, width: 300, height: 200 },
+      },
+      { t: 7_000, kind: "zoom", rect: null },
+    ]);
+    const reference = createCameraPath(subject, 60, 2_880, 1_620);
+    const durations = reference.moves.map((move) => move.durationMs);
+    expect(durations.map(Math.round)).toEqual([1_947, 1_908, 1_947]);
+    expect(scoreTimeline(subject).metrics.cameraMoves.durationsMs).toEqual(
+      durations,
+    );
+    for (const { width, height } of compositionPresets) {
+      const layout = layoutFor(width, height, "macos");
+      const path = createCameraPath(
+        subject,
+        60,
+        layout.screenWidth,
+        layout.screenHeight,
+      );
+      expect(path.moves.map((move) => move.durationMs)).toEqual(durations);
+      expect(path.moves.map((move) => move.durationFrames)).toEqual(
+        reference.moves.map((move) => move.durationFrames),
+      );
+      const tracks = buildStudioTracks(subject, 60, 600, path);
+      tracks.zooms.forEach((track, index) => {
+        expect(track).toMatchObject(
+          msToFrameWindow(track.event.t, durations[index]!, 60),
+        );
+      });
+    }
+  });
+
   it("stays in 1650..2400ms and increases with scale and pan travel", () => {
     const start = { left: 0, top: 0, width: 2_880 };
     const small = { left: 140, top: 80, width: 2_600 };
