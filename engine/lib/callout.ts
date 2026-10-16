@@ -9,7 +9,13 @@ export function calloutSide(rect: Rect, width: number, height: number): CalloutS
 
 /** Rect is already projected through the camera. Re-evaluate fit at every frame. */
 export function calloutPlacement(rect: Rect, text: string, preferred: CalloutSide, width: number, height: number) {
-  const t = demoTheme.callout;
+  const base = demoTheme.callout;
+  const frameScale = width / 2560;
+  const t = { ...base, fontSize: base.fontSize * frameScale, paddingX: base.paddingX * frameScale,
+    paddingY: base.paddingY * frameScale, maxWidth: base.maxWidth * frameScale, margin: base.margin * frameScale,
+    connectorLength: base.connectorLength * frameScale };
+  const padding = base.ringPadding * frameScale;
+  rect = { x: rect.x - padding, y: rect.y - padding, width: rect.width + 2 * padding, height: rect.height + 2 * padding };
   const chipWidth = Math.min(t.maxWidth, width - 2 * t.margin, textWidth(text, t.fontSize) * 1.1 + 2 * t.paddingX);
   // Wrap explicitly so the measured chip and rendered label always have the same height.
   const lines: string[] = [];
@@ -43,6 +49,6 @@ export function calloutPlacement(rect: Rect, text: string, preferred: CalloutSid
     : side === "right" ? { x, y: y + chipHeight / 2 }
     : side === "top" ? { x: x + chipWidth / 2, y: y + chipHeight }
     : { x: x + chipWidth / 2, y };
-  return { side, x, y, width: chipWidth, height: chipHeight, lines,
+  return { side, x, y, ringRect: rect, metrics: t, frameScale, width: chipWidth, height: chipHeight, lines,
     start: { x: p.edgeX, y: p.edgeY }, end };
 }

@@ -19,7 +19,7 @@ export function transitionMotion(event: TransitionEvent | undefined, timeMs: num
     outgoing: {
       scale: 1 - (1 - tokens.outScale) * out,
       opacity: (tokens.contextOpacity + (1 - tokens.contextOpacity) * (1 - out)) * (1 - incoming),
-      translateX: -tokens.translateRatio * out,
+      translateX: -tokens.outTranslateRatio * out,
     },
     incoming: {
       scale: tokens.inScale + (1 - tokens.inScale) * incoming,
@@ -52,6 +52,7 @@ export function Transition({ event, timeMs, frameWidth }: {
   const exitAge = age - event.cardMs + exitMs;
   const eyebrow = typeEase(phase(age, tokens.eyebrowMs));
   const progress = chapterProgress(event, age);
+  const frameScale = frameWidth / 2560;
   const fontSize = frameWidth * demoTheme.outro.titleSizeRatio;
   const eyebrowText = [event.chapter ? `STEP ${event.chapter.index} OF ${event.chapter.total}` : undefined,
     event.role?.toUpperCase()].filter(Boolean).join(" · ");
@@ -60,6 +61,9 @@ export function Transition({ event, timeMs, frameWidth }: {
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center",
       justifyContent: "center", textAlign: "center", padding: "0 8%", pointerEvents: "none",
       fontFamily: demoTheme.fontFamily, color: demoTheme.colors.contentPrimary }}>
+      <div style={{ position: "absolute", inset: 0, opacity: eyebrow * progress.opacity,
+        background: `radial-gradient(ellipse ${frameWidth * 0.45}px ${frameWidth * 0.25}px at center, color-mix(in srgb, ${demoTheme.colors.backdrop} 92%, transparent) 0%, transparent 100%)` }} />
+      <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
       {eyebrowText ? <div style={{ fontSize: tokens.eyebrowSize, fontWeight: 500, letterSpacing: tokens.eyebrowSpacing,
         color: demoTheme.colors.contentSecondary, marginBottom: tokens.eyebrowGap, opacity: eyebrow * progress.opacity,
         transform: `translateY(${tokens.eyebrowOffset * (1 - eyebrow)}px)` }}>{eyebrowText}</div> : null}
@@ -68,20 +72,17 @@ export function Transition({ event, timeMs, frameWidth }: {
           staggerMs={tokens.wordStaggerMs} budgetMs={Math.max(0, event.cardMs - exitMs - titleDelay)}
           offset={tokens.wordOffset} letterSpacing={tokens.wordLetterSpacing} exitAgeMs={exitAge} exitBudgetMs={exitMs} />
       </div>
-      {event.chapter ? <div style={{ position: "relative", width: tokens.stepperWidth, maxWidth: "70%",
-        height: tokens.segmentHeight, marginTop: tokens.stepperGap, opacity: progress.opacity }}>
-        <div style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 1, background: demoTheme.colors.line,
-          transform: `scaleX(${progress.line})`, transformOrigin: "left" }} />
-        <div style={{ position: "absolute", inset: 0, display: "flex", justifyContent: "space-between" }}>
+      {event.chapter ? <div style={{ display: "flex", gap: tokens.segmentGap * frameScale,
+        marginTop: tokens.stepperGap * frameScale, opacity: progress.opacity }}>
           {Array.from({ length: event.chapter.total }, (_, i) => <div key={i} style={{ position: "relative",
-            width: Math.min(tokens.segmentWidth, tokens.stepperWidth / (event.chapter!.total * 2)),
-            height: tokens.segmentHeight, borderRadius: 999, overflow: "hidden", background: demoTheme.colors.line }}>
+            width: tokens.segmentWidth * frameScale,
+            height: tokens.segmentHeight * frameScale, borderRadius: tokens.segmentRadius * frameScale, overflow: "hidden", background: demoTheme.colors.line }}>
             <div style={{ position: "absolute", inset: 0, background: demoTheme.colors.accentPrimary,
               transform: `scaleX(${i + 1 < event.chapter!.index ? 1 : i + 1 === event.chapter!.index ? progress.current : 0})`,
               transformOrigin: "left" }} />
           </div>)}
-        </div>
       </div> : null}
+      </div>
     </div>
   );
 }

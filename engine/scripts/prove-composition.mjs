@@ -108,7 +108,7 @@ async function main() {
       outMs: demoTheme.transition.outMs, cardMs: demoTheme.transition.minCardMs, inMs: demoTheme.transition.inMs },
     { t: 8600, kind: "role", label: "Ops" },
     { t: 10500, kind: "callout", rect: { x: 1000, y: 500, width: 240, height: 90 },
-      text: "Ready for review", holdMs: 1800, side: "right" },
+      text: "Merchant is notified by email", holdMs: 1800, side: "right" },
   ].sort((a, b) => a.t - b.t) };
   await writeFile(path.join(outputDir, "composition-proof-timeline.json"), `${JSON.stringify(timeline, null, 2)}\n`);
   const durationSeconds = Math.max(1, timeline.durationMs / 1_000 + 0.5);

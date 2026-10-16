@@ -67,7 +67,7 @@ export function transitionTotalDuration(event: TransitionEvent) {
 export type CalloutEvent = Extract<TimelineEvent, { kind: "callout" }>;
 export function calloutEnterDuration(text: string) {
   const { callout, caption } = demoTheme;
-  return callout.ringMs + callout.connectorMs + (text.trim() ? caption.wordBudgetMs : 0);
+  return callout.ringMs + callout.connectorMs + callout.labelEnterMs + (text.trim() ? caption.wordBudgetMs : 0);
 }
 export function calloutTotalDuration(event: CalloutEvent) {
   return calloutEnterDuration(event.text) + event.holdMs + demoTheme.callout.exitMs;

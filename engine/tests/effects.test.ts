@@ -202,8 +202,8 @@ describe("transition and roles", () => {
   it("holds context and is continuous across adjacent 60fps boundary frames", () => {
     const event = { ...transition, outMs: 450, cardMs: 1500, inMs: 560 };
     expect(transitionMotion(event, 7999).outgoing).toMatchObject({ scale: 1, opacity: 1 });
-    expect(transitionMotion(event, 8450).outgoing).toMatchObject({ scale: 0.9, opacity: 0.18, translateX: -0.06 });
-    expect(transitionMotion(event, 9200).outgoing).toMatchObject({ scale: 0.9, opacity: 0.18, translateX: -0.06 });
+    expect(transitionMotion(event, 8450).outgoing).toMatchObject({ scale: 0.84, opacity: 0.07, translateX: -0.10 });
+    expect(transitionMotion(event, 9200).outgoing).toMatchObject({ scale: 0.84, opacity: 0.07, translateX: -0.10 });
     expect(transitionMotion(event, 9950).incoming).toMatchObject({ scale: 0.96, opacity: 0, translateX: 0.06 });
     expect(transitionMotion(event, 10510).incoming).toMatchObject({ scale: 1, opacity: 1, translateX: 0 });
     for (const boundary of [8000, 8450, 9950, 10510]) {

@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import fixture from "../fixtures/timeline.json";
 import { calloutSide, calloutPlacement } from "../lib/callout";
 import { exitWordTimings, wordTimings } from "../lib/typography";
-import { calloutTotalDuration, parseTimeline, serializeTimeline, type Timeline, type CalloutEvent } from "../lib/timeline";
-import { chapterProgress } from "../remotion/Transition";
+import { calloutEnterDuration, calloutTotalDuration, parseTimeline, serializeTimeline, type Timeline, type CalloutEvent } from "../lib/timeline";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Transition, chapterProgress } from "../remotion/Transition";
+import { Callout } from "../remotion/Callout";
 import { cursorVisibility } from "../remotion/Cursor";
 import { roleBadgeState, roleBadgeTop, roleLayers, roleWidth } from "../remotion/RoleBadge";
 import { windowPlacement } from "../remotion/WindowInset";
@@ -51,6 +54,16 @@ describe("main cursor visibility", () => {
 });
 
 describe("kinetic word timing and stepper", () => {
+  it.each(compositionPresets)("renders full-width segments below the title at $id", ({ width }) => {
+    const scale = width / 2560;
+    const html = renderToStaticMarkup(createElement(Transition, { event: transition, timeMs: 2460, frameWidth: width }));
+    expect(html.match(new RegExp(`width:${72 * scale}px;height:${6 * scale}px`, "g"))).toHaveLength(5);
+    expect(html).toContain(`gap:${10 * scale}px;margin-top:${28 * scale}px`);
+    expect(html).toContain(`border-radius:${3 * scale}px`);
+    expect(html).toContain("scaleX(0.5)");
+    expect(html).toContain("92%, transparent)");
+  });
+
   it("staggered words have exact start/end and cap to the available card budget", () => {
     expect(wordTimings(3, 45, 420, 980)).toEqual([
       { startMs: 0, endMs: 420 }, { startMs: 45, endMs: 465 }, { startMs: 90, endMs: 510 },
@@ -80,6 +93,37 @@ describe("kinetic word timing and stepper", () => {
 const callout: CalloutEvent = { t: 0, kind: "callout", rect: { x: 100, y: 100, width: 240, height: 60 },
   text: "Ready for review", holdMs: 5000, side: "right" };
 describe("callout integration", () => {
+  it.each(compositionPresets)("keeps the merchant label on one line at $id", ({ width, height }) => {
+    const p = calloutPlacement({ x: width / 3, y: height / 2, width: 100, height: 50 },
+      "Merchant is notified by email", "right", width, height);
+    expect(p.lines).toEqual(["Merchant is notified by email"]);
+    expect(p.height).toBeCloseTo((37.4 * 1.3 + 28) * width / 2560);
+  });
+  it("renders a tinted padded highlight and an opaque chip before words appear", () => {
+    const render = (timeMs: number) => renderToStaticMarkup(createElement(Callout, {
+      event: callout, timeMs, timeline, camera: { scale: 1 / timeline.viewport.deviceScaleFactor, translateX: 0, translateY: 0 },
+      width: 2560, height: 1440,
+    }));
+    const settled = render(1500);
+    expect(settled).toContain("left:86px;top:86px;width:268px;height:88px");
+    expect(settled).toContain("background-color:color-mix(in srgb, #252525 8%, transparent)");
+    expect(settled).toContain("border:1.5px solid color-mix(in srgb, #252525 35%, transparent)");
+    expect(settled).toContain("border-radius:12px;opacity:1;transform:scale(1)");
+    expect(settled).toContain("0 0 0 4px color-mix(in srgb, #252525 10%, transparent), 0 8px 24px color-mix(in srgb, #252525 12%, transparent)");
+    for (const time of [700, 1500]) {
+      const html = render(time);
+      expect(html).toContain("background-color:#FFFFFF");
+      expect(html).toContain("padding:14px 22px");
+      expect(html).toContain("box-shadow:0 8px 24px rgba(33, 27, 51, 0.12)");
+    }
+    expect(render(0)).toContain("opacity:0;transform:scale(0.98)");
+    expect(render(200)).toContain("opacity:1;transform:scale(");
+    expect(render(220)).toContain("opacity:1;transform:scale(1)");
+  });
+  it("budgets the chip entrance before staggered words and the full hold", () => {
+    expect(calloutEnterDuration("Ready for review")).toBe(200 + 280 + 220 + 450);
+    expect(calloutTotalDuration(callout)).toBe(1150 + callout.holdMs + 220);
+  });
   it.each(compositionPresets)("picks space and flips to fit $id", ({ width, height }) => {
     const r = { x: width - 100, y: height / 2, width: 60, height: 40 };
     expect(calloutSide(r, width, height)).toBe("left");
@@ -88,12 +132,23 @@ describe("callout integration", () => {
     for (const rect of [r, { x: 10, y: 10, width: 30, height: 30 }, { x: width / 2, y: height - 40, width: 30, height: 30 }]) {
       for (const side of ["left", "right", "top", "bottom"] as const) {
         const fit = calloutPlacement(rect, callout.text, side, width, height);
-        expect(fit.x).toBeGreaterThanOrEqual(demoTheme.callout.margin);
-        expect(fit.y).toBeGreaterThanOrEqual(demoTheme.callout.margin);
-        expect(fit.x + fit.width).toBeLessThanOrEqual(width - demoTheme.callout.margin);
-        expect(fit.y + fit.height).toBeLessThanOrEqual(height - demoTheme.callout.margin);
+        expect(fit.x).toBeGreaterThanOrEqual(demoTheme.callout.margin * width / 2560);
+        expect(fit.y).toBeGreaterThanOrEqual(demoTheme.callout.margin * width / 2560);
+        expect(fit.x + fit.width).toBeLessThanOrEqual(width - demoTheme.callout.margin * width / 2560);
+        expect(fit.y + fit.height).toBeLessThanOrEqual(height - demoTheme.callout.margin * width / 2560);
       }
     }
+  });
+  it.each(compositionPresets)("scales the readable chip and padded ring at $id", ({ width, height }) => {
+    const scale = width / 2560;
+    const rect = { x: width / 3, y: height / 2, width: 200 * scale, height: 60 * scale };
+    const p = calloutPlacement(rect, "Ready for review", "right", width, height);
+    expect(p.start.x).toBeCloseTo(rect.x + rect.width + 14 * scale);
+    expect(p.x - p.start.x).toBeCloseTo(72 * scale);
+    expect(p.height).toBeCloseTo((22 * 1.7 * 1.3 + 28) * scale);
+    const wrapped = calloutPlacement(rect, "A longer explanation that must wrap across several readable lines", "right", width, height);
+    expect(wrapped.lines.length).toBeGreaterThan(1);
+    expect(wrapped.height).toBeCloseTo((wrapped.lines.length * 22 * 1.7 * 1.3 + 28) * scale);
   });
   it("round-trips optional chapter and callout fields and leaves legacy timelines unchanged", () => {
     for (const subject of [{ ...timeline, events: [transition, callout] }, fixture as Timeline]) {

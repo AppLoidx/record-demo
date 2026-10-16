@@ -162,6 +162,13 @@ keep the clip legible:
 - Do slow, ugly work (page loads, prefilling a long form, resetting mock state) inside a
   transition action, not on camera.
 - Transitions reset the camera to wide; do not `zoomOut()` right before one.
+- `d.callout(locator, text)` only when the label adds something not already on screen (the
+  outcome, a consequence). Never restate visible UI text ("Merchant replied" next to a
+  "Merchant replied" badge) or announce what the next scene shows anyway; one or two per
+  clip is plenty.
+- Mocked backends answer instantly, so real loading states flash by. Add realistic latency
+  (~1s on submits) in the mock or a `context.route` delay so the product's own spinners and
+  disabled states show; never draw a fake loader.
 
 ## Recording local apps (dev servers, mocks)
 
