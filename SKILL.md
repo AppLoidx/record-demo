@@ -1,5 +1,6 @@
 ---
 name: record-demo
+model: claude-opus-5-5
 description: Record a scripted screen-capture demo of any live website with Playwright, then render cursor, zoom, spotlight, captions, and GIF outputs with Remotion. Use when asked to record, script, re-record, or fix a website walkthrough, how-to clip, product demo, storyboard, timeline, caption, cursor, zoom, or Remotion/Playwright demo video.
 ---
 
@@ -120,10 +121,30 @@ pnpm studio
 Studio's timeline panel shows editor-style tracks (Screen filmstrip, one named clip per
 caption, spotlight, zoom move, and outro) - drag the playhead to scrub, click a clip's
 row to find its event. Use the props panel or `fixtures/timeline.json` to edit captions,
-zoom timing (keep zoom moves at or above the 1650ms floor), spotlight timing, and the
+zoom timing (omit `durationMs` for auto timing; explicit values are floored at 1650ms), spotlight timing, and the
 outro title. Edit
 `remotion/theme.ts` for colors, typography, spacing, and motion. Render the finished
 16:9 video with `pnpm render`.
+
+## Choreography (how a scene is paced)
+
+One thing moves at a time: camera, cursor, or page. Every scene is these beats, in order:
+
+| Beat | Storyboard | Timing |
+|---|---|---|
+| 1. Frame | `d.zoomTo(section)` or stay wide | Engine picks 1650-2400ms by travel; follow with `d.hold(<= that>)` so the cursor waits for the camera to land (~1.8s for a short move, ~2.4s wide-to-detail) |
+| 2. Cue | `d.caption("Imperative")` | Just before the cursor departs |
+| 3. Act | `d.click(...)` / `d.type(...)` | Engine paces the cursor by distance and settles 90ms before the click |
+| 4. React | `d.settle(result)` + `d.hold(600-900)` | Let the UI response finish on screen before anything else moves |
+| 5. Release | `d.zoomOut()` before navigating, or the next scene's Frame | Never in the same instant as a click |
+
+- Omit `durationMs` on `zoomTo`/`zoomOut` - auto timing scales with travel. Pass it only to
+  deliberately slow a move (it is floored at 1650ms).
+- The camera stays anchored on its target during a zoom and hands off smoothly when a move
+  starts before the previous one ends - but an overlapping move still reads busy; pace holds
+  so moves land.
+- A scene with nothing to Act on (read-only reveal) is Frame + Cue + a hold long enough to
+  read the caption (~2s) or a spotlight.
 
 ## Motion and storyboard rules (what makes a clip postable)
 
@@ -164,6 +185,20 @@ outro title. Edit
 4. **Watch the actual render**: `ffmpeg -i out/<name>-16x9.mp4 -vf fps=1 out/frames/%03d.png`
    and read the frames. Zoom clipping, caption lag, cutout desync and on-screen dev URLs
    are invisible in a green test run.
+5. **Review every move as a frame sheet**: `node scripts/frame-sheets.mjs <name>` writes one
+   contact sheet per zoom, spotlight and outro to `out/sheets/` (12 frames at 8fps spanning
+   the move). Read each sheet and check, frame by frame:
+
+   | Check | Fail looks like |
+   |---|---|
+   | Target anchored | Zoom target slides sideways across tiles instead of growing in place |
+   | Smooth speed | Even spacing then a sudden jump, or two near-identical tiles mid-move (stall) |
+   | One mover | Cursor travels while the camera is still moving |
+   | Clean landing | Last tile shows a skeleton, blank page, or text cut at the crop edge |
+   | Caption clear | Caption covers the element being acted on |
+
+   Fix the storyboard pacing (holds, zoom targets, padding) and re-record; report the sheets
+   reviewed and what changed.
 
 ## Gotchas
 
