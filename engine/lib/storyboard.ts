@@ -15,7 +15,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { moveCursor, type CursorPoint } from "./cursor";
@@ -791,17 +791,10 @@ function storyboardFailure(error: unknown, clientErrors: ClientError[]) {
   );
 }
 
-async function resolveChromiumExecutable() {
+export async function resolveChromiumExecutable() {
   const executablePath =
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ||
-    path.join(
-      homedir(),
-      ".cache",
-      "ms-playwright",
-      "chromium-1217",
-      "chrome-linux64",
-      "chrome",
-    );
+    chromium.executablePath();
 
   try {
     await access(executablePath, constants.X_OK);
