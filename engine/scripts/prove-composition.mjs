@@ -17,7 +17,8 @@ const {
 const path = await import("node:path");
 const { fileURLToPath } = await import("node:url");
 const { parseTimeline } = await import("../lib/timeline.ts");
-const { compositionPresets } = await import("../remotion/theme.ts");
+const { WindowCapture } = await import("../lib/window-capture.ts");
+const { compositionPresets, demoTheme } = await import("../remotion/theme.ts");
 
 const demosRoot = fileURLToPath(new URL("..", import.meta.url));
 const outputDir = path.join(demosRoot, "out");
@@ -73,29 +74,42 @@ function run(command, args, { capture = false } = {}) {
 async function main() {
   await mkdir(outputDir, { recursive: true });
   const fixture = parseTimeline(await readFile(fixturePath, "utf8"));
-  const timeline = { ...fixture, durationMs: 11000, events: [
-    ...fixture.events,
-    { t: 0, kind: "role", label: "Customer" },
-    { t: 3400, kind: "window", image: windowName, imageWidth: 1140, imageHeight: 840,
-      title: "Inbox", enterMs: 520, holdMs: 2600, exitMs: 320,
-      highlight: { x: 96, y: 504, width: 420, height: 84 }, click: true },
-    { t: 7400, kind: "transition", label: "Review the request", role: "Ops", outMs: 380, cardMs: 900, inMs: 460 },
-    { t: 8230, kind: "role", label: "Ops" },
-  ].sort((a, b) => a.t - b.t) };
-  // A real raster asset with readable content and a CTA proves image scaling and interaction.
-  const { chromium } = await import("@playwright/test");
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
-    args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+  const capture = new WindowCapture({ deviceScaleFactor: 1.5, outputDirectory: publicDir });
+  let windowAsset;
   try {
-    const page = await browser.newPage({ viewport: { width: 760, height: 560 }, deviceScaleFactor: 1.5 });
-    await page.setContent(`<html><body style="margin:0;padding:64px;box-sizing:border-box;background:#fff;color:#333;font-family:Arial">
+    windowAsset = await capture.render({ html: `<html><body style="margin:0;padding:64px;box-sizing:border-box;height:1200px;background:#fff;color:#333;font-family:Arial;display:flex;flex-direction:column">
       <div style="font-size:14px;color:#888;letter-spacing:2px">SWIPELUX · INBOX</div>
       <h1 style="font-size:32px;margin:36px 0 20px">Your request is ready</h1>
       <p style="font-size:20px;line-height:1.6;color:#777;max-width:540px">The team has everything they need.<br>Open your request to continue.</p>
-      <div style="position:absolute;left:64px;top:336px;width:280px;height:56px;border-radius:10px;background:#292929;color:white;display:flex;align-items:center;justify-content:center;font-size:18px">View request →</div>
-      </body></html>`);
-    await page.screenshot({ path: windowPath, scale: "device" });
-  } finally { await browser.close(); }
+      <div style="margin-top:64px;border-top:1px solid #eee;padding-top:28px;font-size:20px;line-height:1.8">Business details received<br>Documents verified<br>Ready for team review</div>
+      <div style="margin-top:auto"><button style="width:280px;height:56px;border:0;border-radius:10px;background:#292929;color:white;font-size:18px">View request →</button>
+      <p style="font-size:16px;color:#888;margin-top:32px">End of message · Everything is included</p></div>
+      </body></html>` }, { width: 760, highlight: "button" }, windowName);
+    if (windowAsset.imageHeight !== 1800) throw new Error(`Tall capture should be 1800 image px, got ${windowAsset.imageHeight}`);
+    for (const [name, html, expectedHeight, targetY] of [
+      ["inner-scroll", '<style>html,body,#app{height:100%;margin:0}#app{overflow:auto}.content{height:1200px;position:relative}button{position:absolute;top:1100px;left:40px;width:200px;height:50px}</style><div id="app"><div class="content"><button>Open</button></div></div>', 1800, 1650],
+      ["viewport-height", '<style>body{margin:0}header{height:60px}main{min-height:100vh}footer{height:40px}</style><header>Top</header><main>Body</main><footer>Footer</footer>', 2100, undefined],
+    ]) {
+      const image = `composition-proof-${name}.png`;
+      try {
+        const asset = await capture.render({ html }, { width: 760, ...(targetY === undefined ? {} : { highlight: "button" }) }, image);
+        if (asset.imageHeight !== expectedHeight || (targetY !== undefined && asset.highlight?.y !== targetY))
+          throw new Error(`Window fit regression: ${name} ${JSON.stringify(asset)}`);
+        console.log(`Window fit passed: ${name} (${asset.imageWidth}x${asset.imageHeight})`);
+      } finally { await rm(path.join(publicDir, image), { force: true }); }
+    }
+  } finally { await capture.close(); }
+  const timeline = { ...fixture, durationMs: 14200, events: [
+    ...fixture.events,
+    { t: 0, kind: "role", label: "Customer" },
+    { t: 3400, kind: "window", ...windowAsset,
+      title: "Inbox", enterMs: demoTheme.window.enterMs, holdMs: 2600, exitMs: demoTheme.window.exitMs, click: true },
+    { t: 7400, kind: "transition", label: "Review the request", role: "Ops", chapter: { index: 2, total: 5 },
+      outMs: demoTheme.transition.outMs, cardMs: demoTheme.transition.minCardMs, inMs: demoTheme.transition.inMs },
+    { t: 8600, kind: "role", label: "Ops" },
+    { t: 10500, kind: "callout", rect: { x: 1000, y: 500, width: 240, height: 90 },
+      text: "Ready for review", holdMs: 1800, side: "right" },
+  ].sort((a, b) => a.t - b.t) };
   await writeFile(path.join(outputDir, "composition-proof-timeline.json"), `${JSON.stringify(timeline, null, 2)}\n`);
   const durationSeconds = Math.max(1, timeline.durationMs / 1_000 + 0.5);
   await mkdir(outputDir, { recursive: true });
@@ -180,6 +194,12 @@ async function main() {
       );
     }
 
+    const framesDir = path.join(outputDir, "motion-round2-frames");
+    await mkdir(framesDir, { recursive: true });
+    for (const [label, seconds] of [["role-swap", 8.82], ["card-stagger", 8.2], ["card-in", 8.8], ["callout", 11.65], ["window-in", 5.22]]) {
+      await run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-ss", String(seconds), "-i", outputPath,
+        "-frames:v", "1", path.join(framesDir, `${preset}-${label}.png`)]);
+    }
     console.log(
       `Composition proof passed: ${path.relative(demosRoot, outputPath)} (${duration.toFixed(2)}s)`,
     );

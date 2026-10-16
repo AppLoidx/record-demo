@@ -14,6 +14,8 @@ const spotlightRectSchema = rectSchema.extend({
 });
 
 const timelineEventSchema = z.discriminatedUnion("kind", [
+  z.object({ t: z.number(), kind: z.literal("callout"), rect: spotlightRectSchema,
+    text: z.string(), holdMs: z.number().nonnegative(), side: z.enum(["left", "right", "top", "bottom"]) }),
   z.object({ t: z.number(), kind: z.literal("role"), label: z.string() }),
   z.object({
     t: z.number(),
@@ -33,6 +35,7 @@ const timelineEventSchema = z.discriminatedUnion("kind", [
     kind: z.literal("transition"),
     label: z.string(),
     role: z.string().optional(),
+    chapter: z.object({ index: z.number().int().positive(), total: z.number().int().positive() }).optional(),
     outMs: z.number().nonnegative(),
     cardMs: z.number().nonnegative(),
     inMs: z.number().nonnegative(),

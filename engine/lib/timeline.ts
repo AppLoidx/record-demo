@@ -1,3 +1,7 @@
+import { demoTheme } from "../remotion/theme.ts";
+
+export type Chapter = { index: number; total: number };
+export type CalloutSide = "left" | "right" | "top" | "bottom";
 export type Rect = { x: number; y: number; width: number; height: number };
 
 export type Timeline = {
@@ -26,10 +30,12 @@ export type Timeline = {
         kind: "transition";
         label: string;
         role?: string;
+        chapter?: Chapter;
         outMs: number;
         cardMs: number;
         inMs: number;
       }
+    | { t: number; kind: "callout"; rect: Rect; text: string; holdMs: number; side: CalloutSide }
     | { t: number; kind: "caption"; text: string; durationMs: number }
     | { t: number; kind: "cursor"; x: number; y: number }
     | { t: number; kind: "click"; x: number; y: number }
@@ -56,6 +62,20 @@ export function windowTotalDuration(event: WindowEvent) {
 }
 export function transitionTotalDuration(event: TransitionEvent) {
   return event.outMs + event.cardMs + event.inMs;
+}
+
+export type CalloutEvent = Extract<TimelineEvent, { kind: "callout" }>;
+export function calloutEnterDuration(text: string) {
+  const { callout, caption } = demoTheme;
+  return callout.ringMs + callout.connectorMs + (text.trim() ? caption.wordBudgetMs : 0);
+}
+export function calloutTotalDuration(event: CalloutEvent) {
+  return calloutEnterDuration(event.text) + event.holdMs + demoTheme.callout.exitMs;
+}
+
+export function isChapter(value: unknown): value is Chapter {
+  return isRecord(value) && Number.isInteger(value.index) && Number.isInteger(value.total) &&
+    (value.index as number) >= 1 && (value.total as number) >= (value.index as number);
 }
 
 export type SpotlightEvent = Extract<TimelineEvent, { kind: "spotlight" }>;
@@ -109,10 +129,15 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
         (value.highlight === undefined || isSpotlightRect(value.highlight)) &&
         (value.click === undefined || typeof value.click === "boolean")
       );
+    case "callout":
+      return isSpotlightRect(value.rect) && typeof value.text === "string" &&
+        isNumber(value.holdMs) && value.holdMs >= 0 &&
+        ["left", "right", "top", "bottom"].includes(value.side as string);
     case "transition":
       return (
         typeof value.label === "string" &&
         (value.role === undefined || typeof value.role === "string") &&
+        (value.chapter === undefined || isChapter(value.chapter)) &&
         [value.outMs, value.cardMs, value.inMs].every(
           (n) => isNumber(n) && n >= 0,
         )

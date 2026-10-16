@@ -1,4 +1,4 @@
-import type { Browser, Page } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Storyboard } from "../lib/storyboard";
 import { WindowCapture, imageRect } from "../lib/window-capture";
@@ -58,13 +58,13 @@ describe("multi-actor storyboard", () => {
     expect(page.waitForTimeout).toHaveBeenCalledWith(3440);
     expect(capture.render).toHaveBeenCalledWith(
       { html: "<button>Open</button>" },
-      expect.objectContaining({ width: 760, height: 560 }),
+      expect.objectContaining({ width: 760, maxHeight: 1400 }),
       "story-window-1.png",
     );
     await d.close();
     expect(capture.close).toHaveBeenCalledOnce();
   });
-  it.each([100, 1200])(
+  it.each([100, 1200, 2100])(
     "measures a %sms switch and pads only the card",
     async (actionMs) => {
       const { d, advance, events } = setup();
@@ -77,20 +77,48 @@ describe("multi-actor storyboard", () => {
           kind: "transition",
           label: "Ops review",
           role: "Ops",
-          outMs: 380,
-          cardMs: Math.max(700, actionMs),
-          inMs: 460,
+          outMs: 450,
+          cardMs: Math.max(1500, actionMs),
+          inMs: 560,
         },
-        { t: 380 + Math.max(700, actionMs) / 2, kind: "role", label: "Ops" },
+        { t: 450 + Math.max(1500, actionMs) / 2, kind: "role", label: "Ops" },
       ]);
       d.role("Customer");
       expect(events.at(-1)).toMatchObject({
-        t: 380 + Math.max(700, actionMs) + 460,
+        t: 450 + Math.max(1500, actionMs) + 560,
         kind: "role",
         label: "Customer",
       });
     },
   );
+  it("records chapter info and honors minCardMs overrides", async () => {
+    const { d, events } = setup();
+    await d.transition("Ops review", async () => {}, { role: "Ops", chapter: { index: 2, total: 5 }, minCardMs: 1900 });
+    expect(events[0]).toMatchObject({ chapter: { index: 2, total: 5 }, outMs: 450, cardMs: 1900, inMs: 560 });
+    await expect(d.transition("Invalid", async () => {}, { chapter: { index: 6, total: 5 } })).rejects.toThrow(/chapter/);
+  });
+  it("records a measured callout without waiting for its animation lifetime", async () => {
+    const { d, events, page } = setup();
+    const target = {
+      waitFor: vi.fn(async () => {}), scrollIntoViewIfNeeded: vi.fn(async () => {}),
+      boundingBox: vi.fn(async () => ({ x: 100, y: 150, width: 240, height: 60 })),
+    } as unknown as Locator;
+    await d.callout(target, "Review here", { holdMs: 9000 });
+    expect(events).toEqual([{ t: 150, kind: "callout", rect: { x: 100, y: 150, width: 240, height: 60 },
+      text: "Review here", side: "right", holdMs: 9000 }]);
+    expect(page.waitForTimeout).toHaveBeenCalledExactlyOnceWith(150);
+    d.caption("Action continues");
+    expect(events.at(-1)).toMatchObject({ t: 150, kind: "caption" });
+    await d.callout(target, "Explicit", { side: "bottom" });
+    expect(events.at(-1)).toMatchObject({ side: "bottom", holdMs: 1800 });
+  });
+  it("accepts height as a maxHeight alias, with maxHeight taking precedence", async () => {
+    const { d, capture } = setup();
+    await d.window({ html: "Tall" }, { height: 900 });
+    expect(capture.render).toHaveBeenLastCalledWith({ html: "Tall" }, expect.objectContaining({ maxHeight: 900 }), expect.any(String));
+    await d.window({ html: "Tall" }, { height: 900, maxHeight: 1200 });
+    expect(capture.render).toHaveBeenLastCalledWith({ html: "Tall" }, expect.objectContaining({ maxHeight: 1200 }), expect.any(String));
+  });
   it("records a zoom reset at transition start when zoomed", async () => {
     const { d, events } = setup();
     events.push({
@@ -162,6 +190,24 @@ describe("isolated window capture", () => {
       height: 60,
     });
   });
+  it.each([
+    { content: 1200, options: {}, expected: 1200 },
+    { content: 2000, options: {}, expected: 1400 },
+    { content: 2000, options: { maxHeight: 1000 }, expected: 1000 },
+    { content: 1200, options: { height: 900 }, expected: 900 },
+    { content: 300, options: {}, expected: 300 },
+  ])("captures full content $content with $options", async ({ content, options, expected }) => {
+    const page = { setContent: vi.fn(async () => {}), evaluate: vi.fn(async () => content),
+      setViewportSize: vi.fn(async () => {}), screenshot: vi.fn(async () => {}) };
+    const context = { newPage: vi.fn(async () => page), close: vi.fn(async () => {}) };
+    const browser = { newContext: vi.fn(async () => context), close: vi.fn(async () => {}) };
+    const capture = new WindowCapture({ deviceScaleFactor: 1.5, outputDirectory: "/tmp",
+      launch: vi.fn(async () => browser as unknown as Browser) });
+    const asset = await capture.render({ html: "content" }, { width: 760, ...options }, "height-test.png");
+    expect(asset).toMatchObject({ imageWidth: 1140, imageHeight: expected * 1.5 });
+    expect(page.setViewportSize).toHaveBeenLastCalledWith({ width: 760, height: expected });
+    await capture.close();
+  });
   it("launches headless once, uses separate contexts, and closes resources", async () => {
     const locator = {
       waitFor: vi.fn(async () => {}),
@@ -176,7 +222,8 @@ describe("isolated window capture", () => {
     const insetPage = {
       setContent: vi.fn(async () => {}),
       goto: vi.fn(async () => {}),
-      evaluate: vi.fn(async () => {}),
+      evaluate: vi.fn(async () => 1200),
+      setViewportSize: vi.fn(async () => {}),
       locator: vi.fn(() => locator),
       screenshot: vi.fn(async () => {}),
     };

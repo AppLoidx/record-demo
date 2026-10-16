@@ -100,7 +100,7 @@ describe("multi-actor timeline", () => {
       "Role: Customer",
       "Role: Ops",
     ]);
-    expect(tracks.roles[0]!.durationInFrames).toBe(671);
+    expect(tracks.roles[0]!.durationInFrames).toBe(675);
   });
   it("sheets cover whole effects", () => {
     expect(computeFrameSheets(timeline, timeline.durationMs)).toMatchObject([
@@ -199,37 +199,23 @@ describe("window motion", () => {
 });
 
 describe("transition and roles", () => {
-  it("is exact at rest and continuous at phase boundaries", () => {
-    const event = { ...transition, cardMs: 700 };
-    expect(transitionMotion(event, 7999)).toMatchObject({
-      scale: 1,
-      opacity: 1,
-      translateX: 0,
-    });
-    expect(transitionMotion(event, 8380)).toMatchObject({
-      opacity: 0,
-      scale: 0.94,
-    });
-    expect(transitionMotion(event, 9080)).toMatchObject({
-      opacity: 0,
-      scale: 1.03,
-      cardOpacity: 0,
-    });
-    expect(transitionMotion(event, 9540)).toMatchObject({
-      opacity: 1,
-      scale: 1,
-      translateX: 0,
-    });
-    for (const boundary of [8000, 8380, 9080, 9540]) {
-      const before = transitionMotion(event, boundary - 0.001),
-        after = transitionMotion(event, boundary + 0.001);
-      for (const key of [
-        "opacity",
-        "scale",
-        "translateX",
-        "cardOpacity",
-      ] as const)
-        expect(Math.abs(after[key] - before[key])).toBeLessThan(0.01);
+  it("holds context and is continuous across adjacent 60fps boundary frames", () => {
+    const event = { ...transition, outMs: 450, cardMs: 1500, inMs: 560 };
+    expect(transitionMotion(event, 7999).outgoing).toMatchObject({ scale: 1, opacity: 1 });
+    expect(transitionMotion(event, 8450).outgoing).toMatchObject({ scale: 0.9, opacity: 0.18, translateX: -0.06 });
+    expect(transitionMotion(event, 9200).outgoing).toMatchObject({ scale: 0.9, opacity: 0.18, translateX: -0.06 });
+    expect(transitionMotion(event, 9950).incoming).toMatchObject({ scale: 0.96, opacity: 0, translateX: 0.06 });
+    expect(transitionMotion(event, 10510).incoming).toMatchObject({ scale: 1, opacity: 1, translateX: 0 });
+    for (const boundary of [8000, 8450, 9950, 10510]) {
+      const beforeFrame = Math.floor(boundary * 60 / 1000);
+      for (const frame of [beforeFrame - 1, beforeFrame]) {
+        const before = transitionMotion(event, frame * 1000 / 60);
+        const after = transitionMotion(event, (frame + 1) * 1000 / 60);
+        for (const layer of ["outgoing", "incoming"] as const) {
+          for (const key of ["opacity", "scale", "translateX"] as const)
+            expect(Math.abs(after[layer][key] - before[layer][key])).toBeLessThan(0.01);
+        }
+      }
     }
   });
   it("arrives wide while the original zoom-out would still be moving", () => {
@@ -282,16 +268,11 @@ describe("transition and roles", () => {
     expect(scoreTimeline(subject).metrics.smoothness.verdict).toBe("PASS");
   });
 
-  it("crossfades roles for 300ms and fades with outro", () => {
-    expect(roleLayers(timeline, 11030, 0)).toMatchObject([
-      { label: "Customer", opacity: 0.5 },
-      { label: "Ops", opacity: 0.5 },
-    ]);
-    expect(roleLayers(timeline, 12000, 0.5)).toEqual([
-      { label: "Ops", opacity: 0.5 },
-    ]);
-    expect(roleLayers(timeline, 12000, 1)).toEqual([
-      { label: "Ops", opacity: 0 },
-    ]);
+  it("swaps roles without blending labels, and fades with outro", () => {
+    for (let age = 0; age <= 360; age += 5) {
+      expect(roleLayers(timeline, 10880 + age, 0).filter((layer) => layer.opacity > 0.15).length).toBeLessThanOrEqual(1);
+    }
+    expect(roleLayers(timeline, 12000, 0.5)).toMatchObject([{ label: "Ops", opacity: 0.5, y: 0 }]);
+    expect(roleLayers(timeline, 12000, 1)).toMatchObject([{ label: "Ops", opacity: 0 }]);
   });
 });

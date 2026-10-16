@@ -59,7 +59,7 @@ export function windowPlacement(
     frameWidth / frameHeight >= demoTheme.layout.landscape.minAspect;
   const desiredWidth =
     frameWidth * (landscape ? tokens.landscapeWidth : tokens.compactWidth);
-  const maxHeight = frameHeight * (1 - 2 * tokens.margin) - tokens.enterOffset;
+  const maxHeight = frameHeight * tokens.maxFrameHeight;
   const width = Math.min(
     desiredWidth,
     ((maxHeight - tokens.chromeHeight) * event.imageWidth) / event.imageHeight,

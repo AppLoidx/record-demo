@@ -1,6 +1,6 @@
 import { interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import { cursorPosition } from "../lib/cursor-position";
-import type { Timeline } from "../lib/timeline";
+import { windowTotalDuration, transitionTotalDuration, type Timeline } from "../lib/timeline";
 import { demoTheme } from "./theme";
 import type { CameraTransform } from "./zoom";
 
@@ -14,6 +14,19 @@ function latestClick(timeline: Timeline, timeMs: number) {
     (event) => event.kind === "click" && event.t <= timeMs,
   );
   return clicks.at(-1);
+}
+
+/** Main pointer stays hidden through every effect phase, then returns without a pop. */
+export function cursorVisibility(timeline: Timeline, timeMs: number) {
+  let opacity = 1;
+  for (const event of timeline.events) {
+    if (event.kind !== "window" && event.kind !== "transition") continue;
+    const duration = event.kind === "window" ? windowTotalDuration(event) : transitionTotalDuration(event);
+    const end = event.t + duration;
+    if (timeMs >= event.t && timeMs < end) return 0;
+    if (timeMs >= end) opacity = Math.min(opacity, Math.min(1, (timeMs - end) / demoTheme.cursor.resumeMs));
+  }
+  return opacity;
 }
 
 export function Cursor({ timeline, camera }: CursorProps) {
@@ -39,7 +52,7 @@ export function Cursor({ timeline, camera }: CursorProps) {
   const x = camera.translateX + position.x * deviceScaleFactor * camera.scale;
   const y = camera.translateY + position.y * deviceScaleFactor * camera.scale;
 
-  return <CursorVisual x={x} y={y} opacity={opacity} clickAge={clickAge} />;
+  return <CursorVisual x={x} y={y} opacity={opacity * cursorVisibility(timeline, timeMs)} clickAge={clickAge} />;
 }
 
 export function CursorVisual({

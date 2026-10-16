@@ -2,12 +2,15 @@ import { chromium, type Browser } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { demoTheme } from "../remotion/theme.ts";
 import type { Rect, WindowEvent } from "./timeline";
 
 export type WindowSource = { html: string } | { url: string };
 export type WindowCaptureOptions = {
   width: number;
-  height: number;
+  maxHeight?: number;
+  /** @deprecated Alias for maxHeight. */
+  height?: number;
   highlight?: string;
 };
 export type WindowAsset = Pick<
@@ -36,14 +39,15 @@ export function imageRect(rect: Rect, deviceScaleFactor: number): Rect {
 export class WindowCapture implements WindowRenderer {
   private browser?: Promise<Browser>;
 
-  constructor(
-    private readonly options: {
-      deviceScaleFactor: number;
-      executablePath?: string;
-      outputDirectory?: string;
-      launch?: typeof chromium.launch;
-    },
-  ) {}
+  private readonly options: {
+    deviceScaleFactor: number;
+    executablePath?: string;
+    outputDirectory?: string;
+    launch?: typeof chromium.launch;
+  };
+  constructor(options: WindowCapture["options"]) {
+    this.options = options;
+  }
 
   async render(
     source: WindowSource,
@@ -59,10 +63,11 @@ export class WindowCapture implements WindowRenderer {
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
     });
     const browser = await this.browser;
-    const { width, height, highlight } = options;
+    const { width, highlight } = options;
+    const maxHeight = options.maxHeight ?? options.height ?? demoTheme.window.maxCaptureHeight;
     const { deviceScaleFactor } = this.options;
     const context = await browser.newContext({
-      viewport: { width, height },
+      viewport: { width, height: Math.min(maxHeight, demoTheme.window.measureHeight) },
       deviceScaleFactor,
     });
     try {
@@ -91,6 +96,35 @@ export class WindowCapture implements WindowRenderer {
           requestAnimationFrame(() => resolve()),
         );
       });
+      let height = Math.min(maxHeight, demoTheme.window.measureHeight);
+      const fitContent = async () => {
+        // Full-height app shells often scroll inside a container instead of the
+        // document. Expand those containers only in this isolated capture page.
+        for (let pass = 0; pass < 8; pass += 1) {
+          const contentHeight = await page.evaluate(() => {
+            for (const element of document.querySelectorAll<HTMLElement>("*")) {
+              if (/^(auto|scroll)$/.test(getComputedStyle(element).overflowY) && element.scrollHeight > element.clientHeight) {
+                element.style.height = `${element.scrollHeight}px`;
+                element.style.minHeight = `${element.scrollHeight}px`;
+                element.style.maxHeight = "none";
+                element.style.overflowY = "visible";
+                element.scrollTop = 0;
+              }
+            }
+            return Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0);
+          });
+          const nextHeight = Math.max(1, Math.min(maxHeight, Math.ceil(contentHeight)));
+          if (nextHeight === height) return;
+          height = nextHeight;
+          await page.setViewportSize({ width, height });
+          if (height === maxHeight) return;
+        }
+        // Layouts with 100vh plus a header keep growing as the viewport grows.
+        // They hit the requested capture cap rather than silently clipping early.
+        height = maxHeight;
+        await page.setViewportSize({ width, height });
+      };
+      await fitContent();
       const target = highlight ? page.locator(highlight) : undefined;
       if (target) {
         await target.waitFor({ state: "visible" });
@@ -119,6 +153,9 @@ export class WindowCapture implements WindowRenderer {
           visible.map((image) => image.decode().catch(() => {})),
         );
       });
+      // Decoding visible images may grow the document after the first layout.
+      await fitContent();
+      if (target) await target.scrollIntoViewIfNeeded();
       let rect: Rect | undefined;
       if (target) {
         const box = await target.boundingBox();

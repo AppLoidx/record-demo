@@ -6,6 +6,7 @@ import { cursorPositionFromPoints } from "../lib/cursor-position.ts";
 import {
   parseTimeline,
   spotlightTotalDuration,
+  calloutTotalDuration,
   windowTotalDuration,
   transitionTotalDuration,
 } from "../lib/timeline.ts";
@@ -216,6 +217,7 @@ export function scoreCameraSeries(
 }
 
 function eventEnd(event, zoomDurationMs) {
+  if (event.kind === "callout") return event.t + calloutTotalDuration(event);
   if (event.kind === "window") return event.t + windowTotalDuration(event);
   if (event.kind === "transition")
     return event.t + transitionTotalDuration(event);
@@ -304,6 +306,9 @@ export function detectDeadAirSpans(
       overlapsOutro ||
       timeline.events.some(
         (event) =>
+          (event.kind === "callout" &&
+            startMs >= event.t &&
+            endMs <= event.t + calloutTotalDuration(event)) ||
           (event.kind === "window" &&
             startMs >= event.t &&
             endMs <= event.t + windowTotalDuration(event)) ||

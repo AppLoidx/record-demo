@@ -1,3 +1,4 @@
+import { calloutSide } from "./callout";
 import { createSceneCameraPath } from "./scene-camera";
 import {
   chromium,
@@ -28,6 +29,9 @@ import { moveCursor, type CursorPoint } from "./cursor";
 import { demoTheme } from "../remotion/theme";
 import {
   serializeTimeline,
+  isChapter,
+  type Chapter,
+  type CalloutSide,
   type Rect,
   type Timeline,
   type TimelineEvent,
@@ -312,6 +316,7 @@ export class Storyboard {
       title?: string;
       holdMs?: number;
       width?: number;
+      maxHeight?: number;
       height?: number;
       highlight?: string;
       click?: boolean;
@@ -323,7 +328,7 @@ export class Storyboard {
         title,
         holdMs = 2600,
         width = 760,
-        height = 560,
+        maxHeight = options.height ?? demoTheme.window.maxCaptureHeight,
         highlight,
         click = false,
       } = options;
@@ -332,14 +337,14 @@ export class Storyboard {
         holdMs < 0 ||
         !Number.isInteger(width) ||
         width <= 0 ||
-        !Number.isInteger(height) ||
-        height <= 0
+        !Number.isInteger(maxHeight) ||
+        maxHeight <= 0
       ) {
         throw new Error("Invalid window dimensions or holdMs");
       }
       const asset = await this.windowCapture.render(
         source,
-        { width, height, highlight },
+        { width, maxHeight, highlight },
         `${this.name}-window-${++this.windowCount}.png`,
       );
       await this.ensureStarted();
@@ -363,12 +368,13 @@ export class Storyboard {
   async transition(
     label: string,
     action: StoryboardAction,
-    options: { role?: string; minCardMs?: number } = {},
+    options: { role?: string; minCardMs?: number; chapter?: Chapter } = {},
   ) {
     this.beginEffect("transition");
     const transitionEvents: TimelineEvent[] = [];
     try {
-      const { role, minCardMs = 700 } = options;
+      const { role, chapter, minCardMs = demoTheme.transition.minCardMs } = options;
+      if (chapter !== undefined && !isChapter(chapter)) throw new Error("Invalid transition chapter");
       if (!Number.isFinite(minCardMs) || minCardMs < 0)
         throw new Error("Invalid transition minCardMs");
       await this.ensureStarted();
@@ -400,6 +406,7 @@ export class Storyboard {
         kind: "transition" as const,
         label,
         ...(role === undefined ? {} : { role }),
+        ...(chapter === undefined ? {} : { chapter }),
         outMs,
         cardMs: minCardMs,
         inMs,
@@ -554,6 +561,18 @@ export class Storyboard {
       durationMs,
       holdMs,
     });
+  }
+
+  async callout(target: Locator | Locator[], text: string, options: { holdMs?: number; side?: CalloutSide } = {}) {
+    const { holdMs = demoTheme.callout.holdMs, side } = options;
+    if (!Number.isFinite(holdMs) || holdMs < 0) throw new Error("Invalid callout holdMs");
+    const rect = await this.measureTarget(target, {
+      padding: 0, scroll: "nearest", containment: "viewport",
+      missingBoxMessage: "Cannot annotate an element without a bounding box",
+    });
+    this.events.push({ t: this.now(), kind: "callout", rect, text, holdMs,
+      side: side ?? calloutSide(rect, this.viewport.width, this.viewport.height) });
+    // Measurement is awaited; the animation lifetime never blocks subsequent actions.
   }
 
   spotlightOff() {

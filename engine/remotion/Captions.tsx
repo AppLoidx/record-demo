@@ -1,5 +1,6 @@
 import { Easing, interpolate, useVideoConfig } from "remotion";
 import type { Timeline, TimelineEvent } from "../lib/timeline";
+import { KineticWords } from "./KineticWords";
 import { demoTheme } from "./theme";
 
 type CaptionEvent = Extract<TimelineEvent, { kind: "caption" }>;
@@ -31,7 +32,7 @@ function CaptionVisual({
     [0, demoTheme.caption.enterDurationMs],
     [0, 1],
     {
-      easing: Easing.bezier(0.23, 1, 0.32, 1),
+      easing: Easing.bezier(...demoTheme.caption.easing),
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
     },
@@ -41,7 +42,7 @@ function CaptionVisual({
     [0, demoTheme.caption.exitDurationMs],
     [0, 1],
     {
-      easing: Easing.bezier(0.23, 1, 0.32, 1),
+      easing: Easing.bezier(...demoTheme.caption.easing),
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
     },
@@ -87,7 +88,7 @@ function CaptionVisual({
           willChange: "transform, opacity",
         }}
       >
-        {caption.text}
+        <KineticWords text={caption.text} ageMs={elapsed - demoTheme.caption.enterDurationMs} />
       </div>
     </div>
   );

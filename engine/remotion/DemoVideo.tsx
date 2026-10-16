@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   AbsoluteFill,
+  Freeze,
   Sequence,
   staticFile,
   useCurrentFrame,
@@ -11,11 +12,13 @@ import {
   type Timeline,
   type TimelineEvent,
   windowTotalDuration,
+  calloutTotalDuration,
   transitionTotalDuration,
 } from "../lib/timeline";
 import { createSceneCameraPath } from "../lib/scene-camera";
 import { WindowInset, windowMotion } from "./WindowInset";
 import { Transition, transitionMotion } from "./Transition";
+import { Callout } from "./Callout";
 import { RoleBadge } from "./RoleBadge";
 import { Background } from "./Background";
 import { Caption } from "./Captions";
@@ -26,7 +29,7 @@ import {
   SpotlightTrack,
   spotlightTotalDuration,
 } from "./Spotlight";
-import { captureViewport, demoTheme, msToFrameWindow } from "./theme";
+import { captureViewport, demoTheme, msToFrame, msToFrameWindow } from "./theme";
 
 type CaptionEvent = Extract<TimelineEvent, { kind: "caption" }>;
 type OutroEvent = Extract<TimelineEvent, { kind: "outro" }>;
@@ -67,6 +70,8 @@ export function buildStudioTracks(
         event.durationMs,
       ),
     );
+  const callouts = timeline.events.filter((event) => event.kind === "callout")
+    .map((event) => timedTrack(event, `Callout: ${event.text}`, calloutTotalDuration(event)));
   const spotlights = timeline.events
     .filter((event): event is SpotlightEvent => event.kind === "spotlight")
     .map((event) =>
@@ -112,6 +117,7 @@ export function buildStudioTracks(
   return {
     screen: { name: "Screen", from: 0, durationInFrames },
     captions,
+    callouts,
     spotlights,
     zooms,
     windows,
@@ -301,10 +307,10 @@ export function DemoVideo(props: DemoVideoProps) {
       event.t <= timeMs &&
       timeMs < event.t + transitionTotalDuration(event),
   );
-  const transition = transitionMotion(
-    transitionEvent?.kind === "transition" ? transitionEvent : undefined,
-    timeMs,
-  );
+  const activeTransition = transitionEvent?.kind === "transition" ? transitionEvent : undefined;
+  const transition = transitionMotion(activeTransition, timeMs);
+  const outgoingFrame = activeTransition ? Math.max(0, msToFrame(activeTransition.t, fps) - 1) : 0;
+  const outgoingCamera = cameraPath.atFrame(outgoingFrame);
   const outroScale = 1 - outro.progress * (1 - demoTheme.outro.recedeScale);
   const screenOpacity =
     1 - outro.progress * (1 - demoTheme.outro.screenOpacity);
@@ -336,51 +342,42 @@ export function DemoVideo(props: DemoVideoProps) {
             transform: "translateX(-50%)",
           }}
         >
-          <div
-            style={{
-              opacity: screenOpacity * transition.opacity,
-              position: "relative",
-              transform: `translateX(${transition.translateX * width}px) scale(${outroScale * inset.mainScale * transition.scale})`,
-              willChange: "transform, opacity",
-            }}
-          >
-            <Screen
-              width={layout.screenWidth}
-              height={layout.screenHeight}
-              radius={radius}
-              chrome={props.windowChrome}
-              chromeHeight={layout.chromeHeight}
-              timeline={props.timeline}
-              videoSrc={videoSrc}
-              camera={camera}
-              showCursor={!outro.started && !inset.active && !transition.active}
-            >
+          {activeTransition ? (
+            <div style={{ position: "absolute", left: 0, top: 0, opacity: screenOpacity * transition.outgoing.opacity,
+              transform: `translateX(${transition.outgoing.translateX * width}px) scale(${transition.outgoing.scale})` }}>
+              <Freeze frame={outgoingFrame}>
+                <Screen width={layout.screenWidth} height={layout.screenHeight} radius={radius}
+                  chrome={props.windowChrome} chromeHeight={layout.chromeHeight} timeline={props.timeline}
+                  videoSrc={videoSrc} camera={outgoingCamera} showCursor={false} />
+              </Freeze>
+            </div>
+          ) : null}
+          <div style={{ position: "relative", opacity: screenOpacity * (activeTransition ? transition.incoming.opacity : 1),
+            transform: `translateX(${activeTransition ? transition.incoming.translateX * width : 0}px) scale(${outroScale * inset.mainScale * (activeTransition ? transition.incoming.scale : 1)})` }}>
+            <Screen width={layout.screenWidth} height={layout.screenHeight} radius={radius} chrome={props.windowChrome}
+              chromeHeight={layout.chromeHeight} timeline={props.timeline} videoSrc={videoSrc} camera={camera}
+              showCursor={!outro.started && !activeTransition}>
               {tracks.spotlights.map((track) => (
-                <Sequence
-                  key={`spotlight-${track.event.t}`}
-                  name={track.name}
-                  from={track.from}
-                  durationInFrames={track.durationInFrames}
-                  layout="none"
-                >
-                  <SpotlightTrack
-                    timeline={props.timeline}
-                    spotlight={track.event}
-                    timeMs={timeMs}
-                  />
+                <Sequence key={`spotlight-${track.event.t}`} name={track.name} from={track.from}
+                  durationInFrames={track.durationInFrames} layout="none">
+                  <SpotlightTrack timeline={props.timeline} spotlight={track.event} timeMs={timeMs} />
                 </Sequence>
               ))}
             </Screen>
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                borderRadius: radius,
-                background: "black",
-                opacity: inset.dim,
-                pointerEvents: "none",
-              }}
-            />
+            <div style={{ position: "absolute", top: layout.chromeHeight, left: 0,
+                width: layout.screenWidth, height: layout.screenHeight, overflow: "hidden" }}>
+                {tracks.callouts.map((track) => (
+                  <Sequence key={`callout-${track.event.t}`} name={track.name} from={track.from}
+                    durationInFrames={track.durationInFrames} layout="none">
+                    {outro.started || activeTransition ? null : (
+                      <Callout event={track.event} timeMs={timeMs} timeline={props.timeline} camera={camera}
+                        width={layout.screenWidth} height={layout.screenHeight} />
+                    )}
+                  </Sequence>
+                ))}
+              </div>
+            <div style={{ position: "absolute", inset: 0, borderRadius: radius, background: "black",
+              opacity: inset.dim, pointerEvents: "none" }} />
           </div>
         </div>
       </Sequence>

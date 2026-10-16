@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { parseTimeline, spotlightTotalDuration, windowTotalDuration, transitionTotalDuration } from "../lib/timeline.ts";
+import { parseTimeline, calloutTotalDuration, spotlightTotalDuration, windowTotalDuration, transitionTotalDuration } from "../lib/timeline.ts";
 
 // Match the runtime TypeScript resolution used by the motion scorer.
 registerHooks({
@@ -35,6 +35,7 @@ export function computeFrameSheets(timeline, videoDurationMs, width = 2560, heig
     let durationMs;
     if (event.kind === "zoom") durationMs = zoomDurations.get(event);
     else if (event.kind === "spotlight") durationMs = spotlightTotalDuration(event);
+    else if (event.kind === "callout") durationMs = calloutTotalDuration(event);
     else if (event.kind === "window") durationMs = windowTotalDuration(event);
     else if (event.kind === "transition") durationMs = transitionTotalDuration(event);
     else if (event.kind === "outro") durationMs = event.durationMs;
