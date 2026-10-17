@@ -416,7 +416,11 @@ export function DemoVideo(props: DemoVideoProps) {
   const annotationOpacity = activeTransition ? annotationHandoffOpacity(activeTransition, compositionTimeMs) : 0;
   const incomingFrame = activeTransition ? compositionFrameAtOrAfterTime(activeTransition.t, fps) : frame;
   const incomingTimeMs = isCut ? timeMap.toTimelineTime(incomingFrame * 1000 / fps) : sourceTimeMs;
-  const incomingCamera = isCut ? cameraPath.atFrame(incomingTimeMs * fps / 1000) : camera;
+  // Sample the camera where the live screen resumes (dissolve end), so a zoom that ran
+  // during the cut's hidden time never nudges on the first live frame.
+  const incomingCamera = isCut && activeTransition
+    ? cameraPath.atFrame((incomingTimeMs + activeTransition.inMs) * fps / 1000)
+    : camera;
   const outroScreen = outroScreenMotion(
     outro.event ? sourceTimeMs - outro.event.t : -1,
   );
