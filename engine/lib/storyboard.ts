@@ -1,3 +1,4 @@
+import { measureLandText } from "./land-text";
 import { calloutSide } from "./callout";
 import { createSceneCameraPath } from "./scene-camera";
 import {
@@ -337,7 +338,7 @@ export class Storyboard {
     await this.page.waitForTimeout(demoTheme.carry.liftMs);
   }
 
-  async land(target: Locator) {
+  async land(target: Locator, options: { text?: string; conceal?: boolean; concealColor?: string } = {}) {
     const rect = await this.measureTarget(target, {
       padding: 0, scroll: "nearest", containment: "viewport",
       missingBoxMessage: "Cannot land on an element without a bounding box",
@@ -345,20 +346,15 @@ export class Storyboard {
     const lastCarry = this.events.filter((event) => event.kind === "carry").at(-1);
     const carryIndex = lastCarry ? this.events.indexOf(lastCarry) : -1;
     const scene = carryIndex < 0 ? undefined : this.events.slice(carryIndex + 1).find((event) => event.kind === "transition");
-    const text = scene?.style === "cut" && typeof target.evaluate === "function" ? await target.evaluate((element) => {
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      const box = range.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      return box.width > 0 && box.height > 0 ? {
-        rect: { x: box.x, y: box.y, width: box.width, height: box.height },
-        textStyle: { fontSize: parseFloat(style.fontSize), fontFamily: style.fontFamily,
-          fontWeight: style.fontWeight, color: style.color },
-      } : undefined;
-    }) : undefined;
+    const text = (scene || options.text !== undefined) && typeof target.evaluate === "function"
+      ? await target.evaluate(measureLandText, options.text) : undefined;
     this.events.push({ t: this.now(), kind: "land", rect: text?.rect ?? rect,
-      ...(text ? { textStyle: text.textStyle } : {}) });
+      ...(text ? { textStyle: text.textStyle, ...(text.lines ? { lines: text.lines, lineCount: text.lineCount } : {}) } : {}),
+      ...(options.text === undefined ? {} : { text: options.text }),
+      ...(options.conceal === undefined ? {} : { conceal: options.conceal }),
+      ...(options.concealColor === undefined ? {} : { concealColor: options.concealColor }) });
     await this.page.waitForTimeout(demoTheme.carry.landMs);
+    return { rect: text?.rect ?? rect, lineCount: text?.lineCount ?? 1, lines: text?.lines };
   }
 
   async window(

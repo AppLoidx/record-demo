@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 import { Storyboard } from "../lib/storyboard";
 import { assertTimeline, parseTimeline, serializeTimeline, type Timeline, type TimelineEvent } from "../lib/timeline";
 import { createTimeMap } from "../lib/time-map";
-import { carryFlights, carryMotion } from "../lib/carry";
+import { carryFlights, carryMotion, carryTiming } from "../lib/carry";
 import { railState } from "../lib/rail";
 import { transitionMotion, Transition } from "../remotion/Transition";
 import { demoVideoSchema } from "../remotion/schema";
@@ -81,22 +81,23 @@ describe("card-less cuts", () => {
   it("pairs carry across cut and travels directly to the camera-projected destination", () => {
     const flight = carryFlights(carryCutLabTimeline)[0]!;
     expect(flight.transition.style).toBe("cut");
-    expect(flight.land.t).toBe(4600);
-    expect(flight.targetTimeMs).toBe(7600);
+    expect(flight.land.t).toBe(2540);
+    expect(carryTiming(flight)).toMatchObject({ incomingMs: 2000, arrivalMs: 2540, revealEndMs: 2720 });
+    expect(flight.targetTimeMs).toBe(5540);
     const source = { x: 100, y: 100, width: 400, height: 40 };
     const target = { x: 800, y: 600, width: 300, height: 30 };
     const dock = { x: -9999, y: -9999, width: 1, height: 1 };
-    for (let time = 2000; time <= 5020; time += 100) {
+    for (let time = 2000; time <= 2540; time += 100) {
       const state = carryMotion(flight, time, source, target, dock);
       expect(state.rect.x).toBeGreaterThanOrEqual(source.x);
       expect(state.rect.x).toBeLessThanOrEqual(target.x);
     }
-    expect(carryMotion(flight, 5020, source, target, dock)).toMatchObject({ rect: target, scale: 1, opacity: 1 });
+    expect(carryMotion(flight, 2540, source, target, dock)).toMatchObject({ rect: target, scale: 1, opacity: 1 });
     const cameraPath = createSceneCameraPath(carryCutLabTimeline, 60, 2200, 1237.5);
-    expect(cameraPath.atFrame(7600 * 60 / 1000).scale).toBeGreaterThan(cameraPath.atFrame(5000 * 60 / 1000).scale);
+    expect(cameraPath.atFrame(5540 * 60 / 1000).scale).toBeGreaterThan(cameraPath.atFrame(2000 * 60 / 1000).scale);
     const html = renderToStaticMarkup(createElement(Carry, { flight, timeline: carryCutLabTimeline, cameraPath, fps: 60,
-      timeMs: 5020, width: 2560, height: 1440, screenOrigin: { x: 0, y: 0 } }));
-    expect(html).toContain(`font-size:${28 * 1.5 * cameraPath.atFrame(456).scale}px`);
+      timeMs: 2540, width: 2560, height: 1440, screenOrigin: { x: 0, y: 0 } }));
+    expect(html).toContain(`font-size:${28 * 1.5 * cameraPath.atFrame(332.4).scale}px`);
   });
   it("lets both pointer snapshots dissolve with their screens", () => {
     for (const time of [1999, 2000, 4999, 5000, 5270, 5540]) {

@@ -92,6 +92,7 @@ describe("exportProject", () => {
     expect(await listFiles(outputDirectory)).toEqual([
       ".nvmrc",
       "README.md",
+      "fixtures/land-text-lab.json",
       "fixtures/timeline.json",
       "lib/callout.ts",
       "lib/camera.ts",

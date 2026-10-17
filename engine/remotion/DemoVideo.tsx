@@ -27,9 +27,9 @@ import { Transition, transitionMotion, annotationHandoffOpacity } from "./Transi
 import { Callout } from "./Callout";
 import { RoleBadge } from "./RoleBadge";
 import { railScreenOffset, railState } from "../lib/rail";
-import { carryFlights } from "../lib/carry";
+import { carryFlights, carryTiming } from "../lib/carry";
 import { Rail } from "./Rail";
-import { Carry } from "./Carry";
+import { Carry, CarryConcealer } from "./Carry";
 import { Background } from "./Background";
 import { Caption } from "./Captions";
 import { Outro, outroScreenMotion, resolveOutro } from "./Outro";
@@ -174,7 +174,7 @@ export function buildStudioTracks(
   });
   const carries = carryFlights(timeline).map((flight) => ({
     name: `Carry: ${flight.carry.text}`,
-    ...msToFrameWindow(flight.carry.t, flight.land.t + demoTheme.carry.landMs - flight.carry.t, fps),
+    ...msToFrameWindow(flight.carry.t, carryTiming(flight).revealEndMs - flight.carry.t, fps),
     flight,
   }));
 
@@ -485,6 +485,9 @@ export function DemoVideo(props: DemoVideoProps) {
             <Screen shadow={!isCut} width={layout.screenWidth} height={layout.screenHeight} radius={radius} chrome={props.windowChrome}
               chromeHeight={layout.chromeHeight} timeline={props.timeline} videoSrc={videoSrc} camera={incomingCamera}
               showCursor={!outro.started && (!activeTransition || activeTransition.style === "cut")} timeMap={timeMap} timeMs={incomingTimeMs}>
+              {tracks.carries.map(({ flight }, index) => <CarryConcealer key={`conceal-${index}`} flight={flight}
+                timeMs={compositionTimeMs} deviceScaleFactor={props.timeline.viewport.deviceScaleFactor}
+                cameraScale={incomingCamera.scale} frameScale={Math.min(width, height) / 1440} />)}
               {tracks.spotlights.filter(({ event }) => sourceTimeMs < annotationEndMs(props.timeline, event)).map((track) => (
                 <Sequence key={`spotlight-${track.event.t}`} name={track.name} from={track.from}
                   durationInFrames={track.durationInFrames} layout="none">

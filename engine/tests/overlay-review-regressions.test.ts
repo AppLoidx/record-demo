@@ -99,16 +99,16 @@ describe("review regressions", () => {
     expect(single).toContain("border-radius:999px");
   });
 
-  it.each([8300, 8700])("never paints a white destination patch on a non-white screen at %sms", (time) => {
+  it.each([8300, 8700])("conceals only the incoming destination before arrival and removes the cover after reveal at %sms", (time) => {
     clock.frame = time * 60 / 1000;
     const html = renderToStaticMarkup(createElement(DemoVideo, { timeline, videoSrc: "test.mp4", windowChrome: "macos" }));
-    const layout = layoutFor(2560, 1440, "macos");
-    const camera = createSceneCameraPath(timeline, 60, layout.screenWidth, layout.screenHeight).atFrame(11310 * 60 / 1000);
-    const land = timeline.events.find((event) => event.kind === "land")!;
-    const projected = projectCarryRect(land.rect, 1.5, camera, { x: 0, y: 0 });
     expect(html).toContain("background:#183A42");
-    expect(html).toContain("Please revise this answer");
-    expect(html).not.toContain(`left:${projected.x}px;top:${projected.y}px;width:${projected.width}px;height:${projected.height}px`);
+    expect(html.match(/data-carry-concealer="true"/g)?.length ?? 0).toBe(time === 8300 ? 1 : 0);
+    if (time === 8300) {
+      const incomingScreen = html.lastIndexOf('data-native-screen="true"');
+      expect(html.indexOf('data-carry-concealer="true"')).toBeGreaterThan(incomingScreen);
+      expect(html).toContain("Please revise this answer");
+    } else expect(html).not.toContain("Please revise this answer");
   });
 
   it("applies the larger rail's headroom in the real compositor", () => {

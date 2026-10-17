@@ -5,6 +5,8 @@ export type CalloutSide = "left" | "right" | "top" | "bottom";
 export type LandText = { fontSize: number; fontFamily: string; fontWeight: string; color: string };
 export type Rect = { x: number; y: number; width: number; height: number };
 
+export type LandLine = { rect: Rect; text: string };
+
 export type Timeline = {
   version: 1;
   name: string;
@@ -17,7 +19,7 @@ export type Timeline = {
     | { t: number; kind: "rail-back"; from: number; to: number }
     | { t: number; kind: "rail-off" }
     | { t: number; kind: "carry"; rect: Rect; text: string }
-    | { t: number; kind: "land"; rect: Rect; textStyle?: LandText }
+    | { t: number; kind: "land"; rect: Rect; textStyle?: LandText; text?: string; lines?: LandLine[]; lineCount?: number; conceal?: boolean; concealColor?: string }
     | {
         t: number;
         kind: "window";
@@ -134,7 +136,13 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
     case "carry":
       return isSpotlightRect(value.rect) && typeof value.text === "string";
     case "land":
-      return isSpotlightRect(value.rect) && (value.textStyle === undefined ||
+      return isSpotlightRect(value.rect) &&
+        (value.text === undefined || typeof value.text === "string") &&
+        (value.lineCount === undefined || (Number.isInteger(value.lineCount) && (value.lineCount as number) > 0)) &&
+        (value.lines === undefined || (Array.isArray(value.lines) && value.lines.length > 0 && value.lines.every((line) =>
+          isRecord(line) && isSpotlightRect(line.rect) && typeof line.text === "string"))) &&
+        (value.conceal === undefined || typeof value.conceal === "boolean") &&
+        (value.concealColor === undefined || typeof value.concealColor === "string") && (value.textStyle === undefined ||
         (isRecord(value.textStyle) && isNumber(value.textStyle.fontSize) && value.textStyle.fontSize > 0 &&
         [value.textStyle.fontFamily, value.textStyle.fontWeight, value.textStyle.color].every((v) => typeof v === "string")));
     case "role":

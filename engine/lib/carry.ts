@@ -42,22 +42,29 @@ function mixRect(a: Rect, b: Rect, amount: number): Rect {
   return { x: a.x + (b.x - a.x) * amount, y: a.y + (b.y - a.y) * amount,
     width: a.width + (b.width - a.width) * amount, height: a.height + (b.height - a.height) * amount };
 }
-export function carryMotion(flight: CarryFlight, timeMs: number, source: Rect, target: Rect, dock: Rect) {
-  const age = timeMs - flight.carry.t;
-  const lift = p(age, t.liftMs);
-  const glideStart = Math.max(flight.carry.t + t.liftMs, flight.transition.t);
-  // Short/zero cards compress the travel rather than jumping at a boundary.
-  const glideMs = Math.min(t.glideMs, Math.max(1, flight.land.t - glideStart));
-  const glide = p(timeMs - glideStart, glideMs);
-  // Settle before dissolving: moving text must never blend with stationary UI glyphs.
-  const landing = p(timeMs - flight.land.t, t.landMs - t.dissolveMs);
-  const direct = flight.transition.style === "cut";
-  const travel = p(timeMs - glideStart, Math.max(1, flight.land.t + t.landMs - t.dissolveMs - glideStart));
-  const rect = direct ? mixRect(source, target, travel) : mixRect(mixRect(source, dock, glide), target, landing);
-  return { rect,
-    landing: direct ? travel : landing,
-    scale: 1 + (t.liftScale - 1) * lift * (1 - (direct ? travel : landing)),
-    opacity: p(age, t.enterMs) * (1 - p(timeMs - flight.land.t - t.landMs + t.dissolveMs, t.dissolveMs)),
-  };
+/** Presentation-clock timing: travel never docks, and reveal starts only after arrival. */
+export function carryTiming(flight: CarryFlight) {
+  const glideStartMs = flight.carry.t + t.liftMs;
+  const incomingMs = flight.transition.t + flight.transition.outMs + flight.transition.cardMs;
+  const sceneEndMs = incomingMs + flight.transition.inMs;
+  const arrivalMs = Math.max(glideStartMs + 1, sceneEndMs,
+    Math.min(flight.land.t, sceneEndMs + t.maxArrivalDelayMs));
+  return { glideStartMs, incomingMs, sceneEndMs, arrivalMs, revealEndMs: arrivalMs + t.dissolveMs };
 }
 
+export function carryConcealOpacity(flight: CarryFlight, timeMs: number) {
+  const timing = carryTiming(flight);
+  if (flight.land.conceal === false || timeMs < timing.incomingMs) return 0;
+  return 1 - p(timeMs - timing.arrivalMs, t.dissolveMs);
+}
+
+export function carryMotion(flight: CarryFlight, timeMs: number, source: Rect, target: Rect, _dock: Rect) {
+  const age = timeMs - flight.carry.t;
+  const lift = p(age, t.liftMs);
+  const timing = carryTiming(flight);
+  const travel = p(timeMs - timing.glideStartMs, timing.arrivalMs - timing.glideStartMs);
+  return { rect: mixRect(source, target, travel), landing: travel,
+    scale: 1 + (t.liftScale - 1) * lift * (1 - travel),
+    opacity: p(age, t.enterMs) * (1 - p(timeMs - timing.arrivalMs, t.dissolveMs)),
+  };
+}

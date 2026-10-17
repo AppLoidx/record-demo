@@ -1,5 +1,6 @@
 import type { Browser, Locator, Page } from "@playwright/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { carryFlights } from "../lib/carry";
 import { Storyboard } from "../lib/storyboard";
 import { WindowCapture, imageRect } from "../lib/window-capture";
 import type { TimelineEvent } from "../lib/timeline";
@@ -48,11 +49,13 @@ describe("multi-actor storyboard", () => {
     if (cutFirst) { await d.cut(async () => {}); await d.transition("Next", async () => {}); }
     else { await d.transition("First", async () => {}); await d.cut(async () => {}); }
     await d.land(target);
-    expect(evaluate).toHaveBeenCalledTimes(cutFirst ? 1 : 0);
+    expect(evaluate).toHaveBeenCalledOnce();
     const landed = events.at(-1);
-    expect(landed?.kind === "land" && !!landed.textStyle).toBe(cutFirst);
+    expect(landed?.kind === "land" && !!landed.textStyle).toBe(true);
+    const flight = carryFlights({ version: 1, name: "pair", viewport, capture: { fps: 30, syncFlashAt: 0 }, durationMs: 20000, events })[0]!;
+    expect(flight.transition.style === "cut").toBe(cutFirst);
   });
-  it("captures native text geometry only for cut landings, preserving chapter carries", async () => {
+  it("captures native text geometry for cut and chapter landings and records conceal options", async () => {
     const { d, events } = setup();
     const text = { rect: { x: 710, y: 420, width: 350, height: 32 },
       textStyle: { fontSize: 28, fontFamily: "Geist Sans", fontWeight: "400", color: "rgb(0, 0, 0)" } };
@@ -62,13 +65,13 @@ describe("multi-actor storyboard", () => {
     await d.carry(target, "Message");
     await d.transition("Chapter", async () => {});
     await d.land(target);
-    expect(evaluate).not.toHaveBeenCalled();
-    expect(events.at(-1)).toMatchObject({ kind: "land", rect: { x: 700, y: 400, width: 400, height: 60 } });
-    await d.carry(target, "Message");
-    await d.cut(async () => {});
-    await d.land(target);
     expect(evaluate).toHaveBeenCalledOnce();
     expect(events.at(-1)).toMatchObject({ kind: "land", ...text });
+    await d.carry(target, "Message");
+    await d.cut(async () => {});
+    await d.land(target, { conceal: false, concealColor: "#183A42" });
+    expect(evaluate).toHaveBeenCalledTimes(2);
+    expect(events.at(-1)).toMatchObject({ kind: "land", ...text, conceal: false, concealColor: "#183A42" });
   });
   it("records the rail sequence synchronously and copies author labels", () => {
     const { d, events, advance } = setup();

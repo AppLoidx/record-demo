@@ -269,6 +269,8 @@ export const demoTheme = {
     fillOpacity: 0.08,
   },
   carry: {
+    concealPadding: 2,
+    maxArrivalDelayMs: 250,
     liftMs: 300,
     enterMs: 180,
     glideMs: 600,

@@ -1,20 +1,20 @@
-import { AbsoluteFill, Easing, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import type { CameraTransform } from "../lib/camera";
 import { createSceneCameraPath } from "../lib/scene-camera";
 import { carryFlights } from "../lib/carry";
 import { railScreenOffset, railState } from "../lib/rail";
-import { clamp } from "../lib/typography";
 import { createTimeMap, transitionVisibleCardMs } from "../lib/time-map";
 import { type Timeline, type Rect } from "../lib/timeline";
 import { Background } from "./Background";
 import { Rail } from "./Rail";
 import { Cursor } from "./Cursor";
-import { Carry } from "./Carry";
+import { Carry, CarryConcealer } from "./Carry";
 import { Callout } from "./Callout";
 import { Transition, transitionMotion, annotationHandoffOpacity } from "./Transition";
 import { SpotlightTrack } from "./Spotlight";
 import { layoutFor, annotationEndMs } from "./DemoVideo";
 import { demoTheme } from "./theme";
+import landTextLab from "../fixtures/land-text-lab.json";
 
 export const labSteps = ["Bank asks", "Ops raises", "Customer answers", "Ops reviews", "Bank"];
 const source: Rect = { x: 680, y: 430, width: 560, height: 72 };
@@ -67,18 +67,18 @@ export const cutLabTimeline: Timeline = {
   ],
 };
 export const carryCutLabTimeline: Timeline = {
-  ...cutLabTimeline, name: "carry-cut-lab", durationMs: 10000,
+  ...cutLabTimeline, name: "carry-cut-lab", durationMs: 6800,
   events: [
     { t: 0, kind: "rail", steps: labSteps, active: 2 },
     { t: 0, kind: "zoom", durationMs: 1650, rect: { x: 500, y: 280, width: 920, height: 520 } },
     { t: 1700, kind: "carry", rect: source, text: "Describe the source of funds" },
     { t: 2000, kind: "transition", style: "cut", label: "", outMs: 0, cardMs: 3000, inMs: 540 },
-    { t: 5540, kind: "zoom", durationMs: 1650, rect: { x: 500, y: 480, width: 920, height: 520 } },
-    { t: 7600, kind: "land", rect: target, textStyle: { fontSize: 28, fontFamily: "Geist Sans", fontWeight: "400", color: demoTheme.colors.contentPrimary } },
+    { t: 3300, kind: "zoom", durationMs: 1650, rect: { x: 500, y: 480, width: 920, height: 520 } },
+    { t: 5540, kind: "land", rect: landTextLab.rect, text: landTextLab.message, lines: landTextLab.lines, lineCount: landTextLab.lineCount, concealColor: demoTheme.colors.backdrop, textStyle: landTextLab.textStyle },
   ],
 };
 
-function Lab({ timeline, kind }: { timeline: Timeline; kind: "rail" | "carry" | "callout" | "cut" | "carry-cut" }) {
+function Lab({ timeline, kind, concealProof = false, concealDisabled = false }: { concealProof?: boolean; concealDisabled?: boolean; timeline: Timeline; kind: "rail" | "carry" | "callout" | "cut" | "carry-cut" }) {
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
   const time = frame * 1000 / fps;
@@ -103,9 +103,7 @@ function Lab({ timeline, kind }: { timeline: Timeline; kind: "rail" | "carry" | 
     motion = { translateX: 0, scale: 1, blur: 0 }) => {
     const annotationTime = movement.active && !incoming && transition ? transition.t - 1000 / fps : sourceTime;
     const annotationOpacity = movement.active && projected ? incoming ? 0 : annotationHandoffOpacity(projected, time) : 1;
-    // The target is measured after a smooth scroll in land(); its earlier position differs.
-    const scroll = kind === "carry-cut" ? 1 : Easing.bezier(...demoTheme.zoom.easing)(clamp((sourceTime - 7510) / 300));
-    const rect = (kind === "carry" || kind === "carry-cut") && incoming ? { ...target, y: target.y + 180 * (1 - scroll) } : source;
+    const rect = (kind === "carry" || kind === "carry-cut") && incoming ? target : source;
     return (
     <div style={{ position: "absolute", left: origin.x, top: layout.top, width: layout.screenWidth,
       height: layout.screenHeight + layout.chromeHeight, borderRadius: 24, overflow: "hidden",
@@ -117,11 +115,23 @@ function Lab({ timeline, kind }: { timeline: Timeline; kind: "rail" | "carry" | 
         <div style={{ position: "absolute", width: 1920 * dsf, height: 1080 * dsf, transformOrigin: "0 0",
           transform: `translate(${camera.translateX}px, ${camera.translateY}px) scale(${camera.scale})` }}>
           <div style={{ position: "absolute", left: 120 * dsf, top: 80 * dsf, fontSize: 28 * dsf, fontWeight: 500 }}>SwipeLux · {incoming ? "Customer form" : "Ops review"}</div>
-          <div style={{ position: "absolute", left: rect.x * dsf, top: (rect.y - 100) * dsf, fontSize: 32 * dsf, fontWeight: 500 }}>{incoming ? "Needs changes" : "Reason shown to the customer"}</div>
+          <div style={{ position: "absolute", left: rect.x * dsf, top: (rect.y - 100) * dsf, fontSize: 32 * dsf, fontWeight: 500 }}>{incoming ? kind === "carry-cut" ? "Request details" : "Needs changes" : "Reason shown to the customer"}</div>
+          {kind === "carry-cut" && incoming ? <p style={{ position: "absolute", left: rect.x * dsf, top: rect.y * dsf,
+            width: rect.width * dsf, margin: 0, fontSize: 28 * dsf, lineHeight: `${40 * dsf}px`, fontWeight: 400,
+            color: concealProof ? "#B700D7" : demoTheme.colors.contentPrimary,
+            background: demoTheme.colors.backdrop, borderRadius: 12 * dsf }}>
+            <span style={{ fontWeight: 500, color: concealProof ? "#007A32" : demoTheme.colors.contentPrimary }}>Needs changes</span>
+            {concealProof ? <><span style={{ color: demoTheme.colors.contentPrimary }}>{" · "}</span>{landTextLab.message}</> : ` · ${landTextLab.message}`}
+          </p> : (
           <div style={{ position: "absolute", left: rect.x * dsf, top: rect.y * dsf, width: rect.width * dsf, height: rect.height * dsf,
+            color: concealProof && incoming ? "#B700D7" : demoTheme.colors.contentPrimary,
             background: incoming ? demoTheme.colors.backdrop : demoTheme.colors.surfaceMuted, borderRadius: 12 * dsf, fontSize: 28 * dsf, lineHeight: "1", display: "flex", alignItems: "center", justifyContent: "center" }}>
             Describe the source of funds
           </div>
+          )}
+          {incoming && !concealDisabled ? carryFlights(timeline).map((flight, index) => <CarryConcealer key={`conceal-${index}`}
+            flight={flight} timeMs={time} deviceScaleFactor={dsf} cameraScale={camera.scale}
+            frameScale={Math.min(width, height) / 1440} />) : null}
           {annotationOpacity > 0 ? <div style={{ opacity: annotationOpacity }}>
             {timeline.events.map((event, index) => event.kind === "spotlight" && annotationTime < annotationEndMs(timeline, event) ?
               <SpotlightTrack key={index} timeline={timeline} spotlight={event} timeMs={annotationTime} /> : null)}
@@ -140,7 +150,8 @@ function Lab({ timeline, kind }: { timeline: Timeline; kind: "rail" | "carry" | 
   const outgoingCamera = transition
     ? cameraPath.atFrame(Math.max(0, Math.ceil(transition.t * fps / 1000) - 1)) : camera;
   return <AbsoluteFill style={{ fontFamily: demoTheme.fontFamily, color: demoTheme.colors.contentPrimary }}>
-    <style>{`@font-face { font-family: 'Geist Sans'; src: url('${staticFile("fonts/geist-sans-latin-500-v5.2.5.woff2")}'); font-weight: 500; }`}</style>
+    <style>{`@font-face { font-family: 'Geist Sans'; src: url('${staticFile("fonts/geist-sans-latin-400-v5.2.5.woff2")}'); font-weight: 400; }
+      @font-face { font-family: 'Geist Sans'; src: url('${staticFile("fonts/geist-sans-latin-500-v5.2.5.woff2")}'); font-weight: 500; }`}</style>
     <Background />
     {transition?.style === "cut" ? <div style={{ position: "absolute", left: origin.x, top: layout.top,
       width: layout.screenWidth, height: layout.screenHeight + layout.chromeHeight,
@@ -151,7 +162,7 @@ function Lab({ timeline, kind }: { timeline: Timeline; kind: "rail" | "carry" | 
     </> : screen(incoming, camera, 1)}
     {projected ? <Transition event={projected} timeMs={time} frameWidth={width} /> : null}
     {(kind === "rail" || kind === "cut" || kind === "carry-cut") ? <Rail state={rail} width={width} height={height} screenShift={screenShift} /> : null}
-    {(kind === "carry" || kind === "carry-cut") ? carryFlights(timeline).map((flight, index) => <Carry key={index} flight={flight} timeline={timeline}
+    {!concealProof && (kind === "carry" || kind === "carry-cut") ? carryFlights(timeline).map((flight, index) => <Carry key={index} flight={flight} timeline={timeline}
       cameraPath={cameraPath} fps={fps} timeMs={time} width={width} height={height} screenOrigin={origin} screenOriginAt={screenOriginAt} />) : null}
   </AbsoluteFill>;
 }
@@ -160,4 +171,5 @@ export const CarryLab = () => <Lab timeline={carryLabTimeline} kind="carry" />;
 export const CalloutLab = () => <Lab timeline={calloutLabTimeline} kind="callout" />;
 
 export const CutLab = () => <Lab timeline={cutLabTimeline} kind="cut" />;
-export const CarryCutLab = () => <Lab timeline={carryCutLabTimeline} kind="carry-cut" />;
+export const CarryCutLab = ({ concealProof = false, concealDisabled = false }: { concealProof?: boolean; concealDisabled?: boolean }) =>
+  <Lab timeline={carryCutLabTimeline} kind="carry-cut" concealProof={concealProof} concealDisabled={concealDisabled} />;

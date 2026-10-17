@@ -232,13 +232,13 @@ keep the clip legible:
 | Role badge | `d.role("Customer")`, or `role` on a transition | Naming whose perspective is on screen |
 | Loop rail | `d.rail(["Bank", "Ops", "Customer", "Ops", "Bank"], 0)` | A persistent actor path; repeat with the next active index to advance |
 | Return arc | `d.railBack(3, 2)`, `d.railOff()` | Showing a loop back, then hiding the rail when the story ends |
-| Message carry | `await d.carry(source, "Please revise this answer")`; transition; `await d.land(destination)` | Carrying the same words across a chapter card into the next app |
+| Message carry | `await d.carry(source, "Please revise this answer")`; transition; `await d.land(destination)` | Carrying the same words across a cut or chapter into the next app |
 
 - The rail replaces the role badge while visible and stays above chapter cards. Indices
   start at 0; allow 520ms for an advance, or 1720ms for a return arc, landing and fade.
 - Carry/land locators should frame the message text. Settle the camera first, then
   `await d.carry(...)`, `await d.cut(...)` (or a chapter `d.transition(...)`), and `await d.land(...)` in sequence.
-  Cut carries glide directly to the destination; chapter carries pause below the card. Land on a text locator
+  Cut and chapter carries glide continuously from lift end to the destination, arriving by the end of the incoming dissolve or within 250ms after it. Land on a text locator
   covering the carried words: the engine captures its text range and font metrics for the final aligned crossfade.
   A `d.zoomTo(...)` before `land()` is supported; allow the camera to settle before landing.
   Carry waits for its 300ms lift; land waits for its 600ms glide and dissolve. Elastic
@@ -364,3 +364,31 @@ short dissolve remains. No title, eyebrow, stepper or veil is rendered. The rail
 unless explicitly changed by storyboard calls. A rail return finishes by the end of a following dissolve.
 Version 1 timelines encode this as a transition with `style: "cut"`, zero outgoing/card presentation time,
 and the requested incoming duration. Regular chapter transitions remain available for deliberate section breaks.
+
+### Concealed carry destinations
+
+Use `await d.land(destinationText, { conceal?: boolean, concealColor?: string })` immediately after
+`await d.cut(...)` or `await d.transition(...)`. Concealment defaults to true for both styles. The
+renderer covers the destination from the first incoming frame until the chip arrives, then crossfades
+the chip glyphs into the real text over 180ms while the cover fades away. The chip follows one continuous
+route from lift end; chapter cards no longer provide a resting dock.
+
+The cover defaults to the theme surface (white). Supply an opaque `concealColor` matching a colored
+destination surface, or `conceal: false` to opt out. Target the exact carried words on a settled page:
+the land rectangle is used retrospectively from the incoming frame, so keep the destination geometry
+stable during that interval (perform navigation, scrolling and resets inside the scene-change action).
+Camera transforms and the incoming screen dissolve apply to the cover automatically. To arrive already
+zoomed, issue the destination zoom inside the action and let it settle there before calling land.
+
+When the message is a bare text node inside a status paragraph, select its text explicitly:
+
+```ts
+// <p><span>Needs changes</span> · {message}</p>
+const { lineCount } = await d.land(statusParagraph, { text: message });
+```
+
+`text` selects the first exact occurrence across the locator's descendant text nodes using DOM Ranges.
+The returned `rect` is the union of the measured line boxes; `lines` and `lineCount` are also returned
+and recorded on the land event. Wrapped messages land as matching individual lines, with a cover per
+line, so the status prefix stays visible even when it lies inside the union rectangle. Empty, missing,
+or invisible requested text raises an error instead of using the surrounding paragraph.

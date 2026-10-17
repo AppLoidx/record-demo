@@ -86,7 +86,7 @@ describe("rail choreography", () => {
 it("exposes rail and carry spans on the composition clock in Studio", () => {
   const tracks = buildStudioTracks(timeline, 60, 792);
   expect(tracks.rails[0]).toMatchObject({ from: 0, name: "Rail: Bank asks" });
-  expect(tracks.carries[0]).toMatchObject({ from: 360, durationInFrames: 187, name: "Carry: Please describe the source of funds" });
+  expect(tracks.carries[0]).toMatchObject({ from: 360, durationInFrames: 162, name: "Carry: Please describe the source of funds" });
 });
 
 describe("message carry", () => {
@@ -101,15 +101,16 @@ describe("message carry", () => {
     expect(projectCarryRect(rect, 1.5, { scale: 0.5, translateX: -30, translateY: -20 }, { x: 100, y: 200 }))
       .toEqual({ x: 595, y: 480, width: 270, height: 45 });
   });
-  it("lifts in place, holds under the title, lands exactly and crossfades away", () => {
+  it("lifts then glides directly through the chapter and crossfades at arrival", () => {
     const flight = carryFlights(timeline)[0]!;
     const source = rect, target = { ...rect, y: 600 }, dock = { ...rect, x: 900, y: 800 };
     const at = (time: number) => carryMotion(flight, time, source, target, dock);
     expect(at(6000)).toMatchObject({ rect: source, scale: 1, opacity: 0 });
     expect(at(6300).scale).toBe(1.04);
-    expect(at(7500).rect).toEqual(dock);
-    expect(at(8510).rect).toEqual(dock);
-    expect(at(8930)).toMatchObject({ rect: target, scale: 1, opacity: 1 });
+    expect(at(7500).rect.y).toBeGreaterThan(source.y);
+    expect(at(7500).rect.y).toBeLessThan(target.y);
+    expect(at(8510)).toMatchObject({ rect: target, scale: 1, opacity: 1 });
+    expect(at(8690)).toMatchObject({ rect: target, scale: 1, opacity: 0 });
     expect(at(9110)).toMatchObject({ rect: target, scale: 1, opacity: 0 });
     for (const t of [6000, 6180, 6300, 6900, 7950, 8510, 8930, 9110]) {
       const a = at(t - 0.001), b = at(t + 0.001);
@@ -215,5 +216,5 @@ it("anchors carry endpoints to their capture-time screen origins when rail headr
     screenOriginAt: (time: number) => time <= 6000 ? { x: 111, y: 222 } : { x: 333, y: 444 },
   }));
   expect(render(6300)).toContain("left:811px;top:622px");
-  expect(render(8930)).toContain("left:1033px;top:1044px");
+  expect(render(8510)).toContain("left:1033px;top:1044px");
 });
