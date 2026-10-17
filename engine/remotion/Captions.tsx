@@ -1,111 +1,56 @@
 import { Easing, interpolate, useVideoConfig } from "remotion";
 import type { Timeline, TimelineEvent } from "../lib/timeline";
+import { textWidth } from "../lib/typography";
 import { KineticWords } from "./KineticWords";
 import { demoTheme } from "./theme";
-
 type CaptionEvent = Extract<TimelineEvent, { kind: "caption" }>;
 
 function activeCaptionAt(timeline: Timeline, timeMs: number) {
-  return timeline.events
-    .filter((event) => event.kind === "caption")
-    .filter(
-      (event) => event.t <= timeMs && event.t + event.durationMs >= timeMs,
-    )
-    .at(-1);
+  return timeline.events.filter((event) => event.kind === "caption")
+    .filter((event) => event.t <= timeMs && timeMs < event.t + event.durationMs).at(-1);
 }
 
-function CaptionVisual({
-  caption,
-  bottom,
-  timeMs,
-}: {
-  caption: CaptionEvent;
-  bottom: number;
-  timeMs: number;
-}) {
-  const { width } = useVideoConfig();
+/** Conservative wrapping metrics keep even long captions within the reserved band. */
+export function captionFontSize(text: string, width: number, height: number, bandHeight: number) {
+  const scale = Math.min(width, height) / 1440;
+  let fontSize = demoTheme.caption.fontSize * scale;
+  const maxWidth = width * demoTheme.caption.widthRatio;
+  for (;;) {
+    let lineWidth = 0, lines = 1;
+    for (const word of text.trim().split(/\s+/)) {
+      const wordWidth = textWidth(word, fontSize);
+      if (wordWidth > maxWidth) { fontSize *= .95; lineWidth = Infinity; break; }
+      if (lineWidth && lineWidth + textWidth(" ", fontSize) + wordWidth > maxWidth) { lines++; lineWidth = wordWidth; }
+      else lineWidth += (lineWidth ? textWidth(" ", fontSize) : 0) + wordWidth;
+    }
+    if (lineWidth !== Infinity && lines * fontSize * demoTheme.caption.lineHeight + demoTheme.caption.wordOffset * scale * 2 <= bandHeight) return fontSize;
+    fontSize *= .95;
+  }
+}
 
+export function CaptionVisual({ caption, bandTop, bandHeight, timeMs, width, height }: {
+  caption: CaptionEvent; bandTop: number; bandHeight: number; timeMs: number; width: number; height: number;
+}) {
   const elapsed = timeMs - caption.t;
-  const remaining = caption.durationMs - elapsed;
-  const enter = interpolate(
-    elapsed,
-    [0, demoTheme.caption.enterDurationMs],
-    [0, 1],
-    {
-      easing: Easing.bezier(...demoTheme.caption.easing),
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-    },
-  );
-  const exit = interpolate(
-    remaining,
-    [0, demoTheme.caption.exitDurationMs],
-    [0, 1],
-    {
-      easing: Easing.bezier(...demoTheme.caption.easing),
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-    },
-  );
-  const visibility = Math.min(enter, exit);
-  const fontSize =
-    width >= demoTheme.caption.wideFrameThreshold
-      ? demoTheme.caption.wideFontSize
-      : width >= demoTheme.caption.mediumFrameThreshold
-        ? demoTheme.caption.mediumFontSize
-        : demoTheme.caption.compactFontSize;
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: 0,
-        right: 0,
-        bottom,
-        display: "flex",
-        justifyContent: "center",
-        padding: "0 64px",
-        pointerEvents: "none",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "86%",
-          border: "1px solid rgba(255, 255, 255, 0.18)",
-          borderRadius: 999,
-          padding: `${fontSize * 0.5}px ${fontSize * 0.9}px`,
-          color: demoTheme.colors.captionText,
-          backgroundColor: demoTheme.colors.accentPrimary,
-          boxShadow: "0 14px 36px rgba(23, 20, 31, 0.22)",
-          fontFamily: demoTheme.fontFamily,
-          fontSize,
-          fontWeight: 500,
-          lineHeight: 1.24,
-          letterSpacing: "-0.02em",
-          textAlign: "center",
-          opacity: visibility,
-          transform: `translateY(${(1 - enter) * demoTheme.caption.enterOffset}px) scale(${demoTheme.caption.enterScale + enter * (1 - demoTheme.caption.enterScale)})`,
-          willChange: "transform, opacity",
-        }}
-      >
-        <KineticWords text={caption.text} ageMs={elapsed - demoTheme.caption.enterDurationMs} />
-      </div>
+  const exit = interpolate(caption.durationMs - elapsed, [0, demoTheme.caption.exitDurationMs], [0, 1], {
+    easing: Easing.bezier(...demoTheme.caption.easing), extrapolateLeft: "clamp", extrapolateRight: "clamp",
+  });
+  return <div data-caption-band style={{ position: "absolute", left: 0, top: bandTop, width, height: bandHeight,
+    display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", pointerEvents: "none" }}>
+    <div data-caption-text style={{ maxWidth: `${demoTheme.caption.widthRatio * 100}%`,
+      color: demoTheme.colors.contentPrimary, fontFamily: demoTheme.fontFamily,
+      fontSize: captionFontSize(caption.text, width, height, bandHeight), fontWeight: 500,
+      lineHeight: demoTheme.caption.lineHeight, letterSpacing: "-0.02em", textAlign: "center", opacity: exit }}>
+      <KineticWords text={caption.text} ageMs={elapsed} offset={demoTheme.caption.wordOffset * Math.min(width, height) / 1440}
+        budgetMs={Math.min(demoTheme.caption.wordBudgetMs, caption.durationMs * .6)} />
     </div>
-  );
+  </div>;
 }
 
-export function Caption({
-  timeline,
-  caption,
-  bottom,
-  timeMs,
-}: {
-  timeline: Timeline;
-  caption: CaptionEvent;
-  bottom: number;
-  timeMs: number;
+export function Caption({ timeline, caption, bandTop, bandHeight, timeMs }: {
+  timeline: Timeline; caption: CaptionEvent; bandTop: number; bandHeight: number; timeMs: number;
 }) {
+  const { width, height } = useVideoConfig();
   if (activeCaptionAt(timeline, timeMs) !== caption) return null;
-
-  return <CaptionVisual caption={caption} bottom={bottom} timeMs={timeMs} />;
+  return <CaptionVisual caption={caption} bandTop={bandTop} bandHeight={bandHeight} timeMs={timeMs} width={width} height={height} />;
 }

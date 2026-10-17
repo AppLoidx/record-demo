@@ -15,6 +15,7 @@ const browserExecutable = chromium.executablePath();
 const serveUrl = await bundle({ entryPoint: path.join(root, "remotion/Root.tsx"), onProgress() {} });
 await mkdir(output, { recursive: true });
 const thresholds = {
+  CaptionLab: [0, 500, 520, 760, 950, 1300, 2760, 2900, 3300, 3560, 3750, 4800, 5760, 5900, 6000, 6260, 6860, 7000],
   CutLab: [0, 100, 360, 500, 720, 900, 1080, 1150, 1350, 1650, 1900, 2000, 2080, 2180, 2270, 2540, 3060, 3360],
   CarryCutLab: [0, 360, 1650, 1700, 1880, 2000, 2270, 2540, 2630, 2720, 3140],
   CarryCutLabPostZoom: [0, 1700, 2000, 2270, 2540, 2790, 2880, 2970, 3365, 4190, 4790],
@@ -22,7 +23,7 @@ const thresholds = {
   CarryLab: [2500, 2680, 2800, 3250, 3400, 3510, 3670, 4030, 4110, 4190, 4450, 4710, 5010, 5430, 5610],
   CalloutLab: [600, 800, 820, 1080, 1300, 1750, 4750, 4970, 5300, 5500, 5520, 5780, 6000, 6450, 8050, 8270],
 };
-const heroFrames = { CutLab: 136, CarryCutLab: 149, CarryCutLabPostZoom: 167, RailLab: 178, CarryLab: 230, CalloutLab: 414 };
+const heroFrames = { CaptionLab: 88, CutLab: 136, CarryCutLab: 149, CarryCutLabPostZoom: 167, RailLab: 178, CarryLab: 230, CalloutLab: 414 };
 const requested = process.argv.slice(2);
 const selected = requested.length ? requested : Object.keys(thresholds);
 for (const lab of selected) if (!(lab in thresholds)) throw new Error(`Unknown lab: ${lab}`);
@@ -44,7 +45,7 @@ for (const lab of selected) {
       onProgress() {} });
     await renderStill({ serveUrl, composition, frame: heroFrames[lab], browserExecutable,
       output: path.join(output, `${stem}.png`), imageFormat: "png" });
-    const extra = { CutLab: ["settled", 180], CarryCutLab: ["settled", 180], CarryCutLabPostZoom: ["settled", 270], RailLab: ["chapter", 257], CarryLab: ["settled", 360], CalloutLab: ["single-line", 150] }[lab];
+    const extra = { CaptionLab: ["long-caption", 240], CutLab: ["settled", 180], CarryCutLab: ["settled", 180], CarryCutLabPostZoom: ["settled", 270], RailLab: ["chapter", 257], CarryLab: ["settled", 360], CalloutLab: ["single-line", 150] }[lab];
     await renderStill({ serveUrl, composition, frame: extra[1], browserExecutable,
       output: path.join(output, `${stem}-${extra[0]}.png`), imageFormat: "png" });
     execFileSync("ffmpeg", ["-y", "-v", "error", "-i", outputLocation, "-vf",

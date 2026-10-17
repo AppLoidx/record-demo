@@ -398,3 +398,17 @@ The returned `rect` is the union of the measured line boxes; `lines` and `lineCo
 and recorded on the land event. Wrapped messages land as matching individual lines, with a cover per
 line, so the status prefix stays visible even when it lies inside the union rectangle. Empty, missing,
 or invisible requested text raises an error instead of using the surrounding paragraph.
+
+
+### Captions live below the capture
+
+`d.caption(...)` and `d.step(...)` keep their existing API. Any caption event reserves a stage
+band for the whole film (6% of frame height in each preset), below the screen frame and its chrome.
+The screen fits between that band and the largest authored rail band; late captions and rail changes
+do not resize or move it. Films without captions retain their usual frame layout.
+
+Caption text uses medium-weight theme ink directly on the stage gradient, about 30px at 2560×1440,
+scaled for compact formats and fitted to the available band when it wraps. Words rise and fade from
+the cue itself, with a quick 140ms exit; there is no pill, backing, or empty-shape prelude. Keep captions
+short imperatives so they stay easy to read. CaptionLab covers short, wrapped and one-word captions,
+plus a rail appearing and disappearing while the bottom action remains clear.

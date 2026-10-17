@@ -13,7 +13,7 @@ import {
 } from "./DemoVideo";
 import { demoVideoSchema } from "./schema";
 import { compositionFps, compositionPresets } from "./theme";
-import { CutLab, CarryCutLab, cutLabTimeline, carryCutLabTimeline, RailLab, CarryLab, CalloutLab, railLabTimeline, carryLabTimeline, calloutLabTimeline } from "./Labs";
+import { CaptionLab, captionLabTimeline, CutLab, CarryCutLab, cutLabTimeline, carryCutLabTimeline, RailLab, CarryLab, CalloutLab, railLabTimeline, carryLabTimeline, calloutLabTimeline } from "./Labs";
 
 const timelineValue: unknown = fixtureTimeline;
 assertTimeline(timelineValue);
@@ -42,6 +42,7 @@ export function RemotionRoot() {
   return (
     <>
       {[
+        { id: "CaptionLab", component: CaptionLab, timeline: captionLabTimeline },
         { id: "CutLab", component: CutLab, timeline: cutLabTimeline },
         { id: "CarryCutLab", component: CarryCutLab, timeline: carryCutLabTimeline },
         { id: "RailLab", component: RailLab, timeline: railLabTimeline },

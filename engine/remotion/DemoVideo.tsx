@@ -273,7 +273,27 @@ export function layoutFor(
   width: number,
   height: number,
   chrome: WindowChrome = "none",
-) {
+  timeline?: Timeline,
+): { screenWidth: number; screenHeight: number; chromeHeight: number; top: number; captionTop: number; captionHeight: number } {
+  if (timeline?.events.some((event) => event.kind === "caption")) {
+    const base = layoutFor(width, height, chrome);
+    const captionHeight = height * demoTheme.caption.bandHeightRatio;
+    const scale = Math.min(width, height) / 1440;
+    const gap = demoTheme.caption.screenGap * scale;
+    // Whole-film reservation includes the largest rail, so neither band can
+    // push the screen into the other when its first event appears.
+    const top = Math.max(base.top - captionHeight / 2,
+      base.top + railScreenOffset(timeline, width, height, base.top, 1));
+    const available = height - top - captionHeight - gap - 16 * scale;
+    const ratio = base.screenHeight / base.screenWidth;
+    const screenWidth = Math.min(base.screenWidth, chrome === "none" ? available / ratio
+      : Math.min((available - demoTheme.screen.chromeMinimumHeight) / ratio,
+        available / (ratio + demoTheme.screen.chromeHeightRatio)));
+    const screenHeight = screenWidth * ratio;
+    const chromeHeight = chromeHeightFor(screenWidth, chrome);
+    return { screenWidth, screenHeight, chromeHeight, top, captionHeight,
+      captionTop: top + screenHeight + chromeHeight + gap };
+  }
   const aspect = width / height;
   if (aspect >= demoTheme.layout.landscape.minAspect) {
     const screenWidth = width * demoTheme.layout.landscape.screenWidth;
@@ -283,7 +303,7 @@ export function layoutFor(
       screenHeight: screenWidth * (9 / 16),
       chromeHeight,
       top: (height - screenWidth * (9 / 16) - chromeHeight) / 2,
-      captionBottom: height * demoTheme.layout.landscape.captionBottom,
+      captionTop: height, captionHeight: 0,
     };
   }
 
@@ -295,7 +315,7 @@ export function layoutFor(
       screenHeight: height * demoTheme.layout.square.screenHeight,
       chromeHeight,
       top: height * demoTheme.layout.square.screenTop - chromeHeight / 2,
-      captionBottom: height * demoTheme.layout.square.captionBottom,
+      captionTop: height, captionHeight: 0,
     };
   }
 
@@ -306,7 +326,7 @@ export function layoutFor(
     screenHeight: height * demoTheme.layout.portrait.screenHeight,
     chromeHeight,
     top: height * demoTheme.layout.portrait.screenTop - chromeHeight / 2,
-    captionBottom: height * demoTheme.layout.portrait.captionBottom,
+    captionTop: height, captionHeight: 0,
   };
 }
 
@@ -348,7 +368,7 @@ export function DemoVideo(props: DemoVideoProps) {
   const { fps, width, height, durationInFrames } = useVideoConfig();
   const compositionTimeMs = (frame / fps) * 1_000;
   const rail = railState(props.timeline, compositionTimeMs);
-  const baseLayout = layoutFor(width, height, props.windowChrome);
+  const baseLayout = layoutFor(width, height, props.windowChrome, props.timeline);
   const screenShift = railScreenOffset(props.timeline, width, height, baseLayout.top, 1);
   const layout = { ...baseLayout, top: baseLayout.top + screenShift * rail.opacity };
   const screenOriginAt = (time: number) => ({
@@ -586,7 +606,8 @@ export function DemoVideo(props: DemoVideoProps) {
             <Caption
               timeline={props.timeline}
               caption={track.event}
-              bottom={layout.captionBottom}
+              bandTop={layout.captionTop}
+              bandHeight={layout.captionHeight}
               timeMs={sourceTimeMs}
             />
           </div>

@@ -5,6 +5,7 @@ import { carryFlights } from "../lib/carry";
 import { railScreenOffset, railState } from "../lib/rail";
 import { createTimeMap, transitionVisibleCardMs } from "../lib/time-map";
 import { type Timeline, type Rect } from "../lib/timeline";
+import { Caption } from "./Captions";
 import { Background } from "./Background";
 import { Rail } from "./Rail";
 import { Cursor } from "./Cursor";
@@ -78,14 +79,25 @@ export const carryCutLabTimeline: Timeline = {
   ],
 };
 
-function Lab({ timeline, kind, concealProof = false, concealDisabled = false }: { concealProof?: boolean; concealDisabled?: boolean; timeline: Timeline; kind: "rail" | "carry" | "callout" | "cut" | "carry-cut" }) {
+export const captionLabTimeline: Timeline = {
+  ...railLabTimeline, name: "caption-lab", durationMs: 7400,
+  events: [
+    { t: 500, kind: "caption", text: "Send the request to the customer", durationMs: 2400 },
+    { t: 1300, kind: "rail", steps: labSteps, active: 1 },
+    { t: 3300, kind: "caption", text: "Review the supporting documents, add the missing details, and return the updated answer to the Bank", durationMs: 2600 },
+    { t: 4800, kind: "rail-off" },
+    { t: 6000, kind: "caption", text: "Done", durationMs: 1000 },
+  ],
+};
+
+function Lab({ timeline, kind, concealProof = false, concealDisabled = false }: { concealProof?: boolean; concealDisabled?: boolean; timeline: Timeline; kind: "rail" | "carry" | "callout" | "cut" | "carry-cut" | "caption" }) {
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
   const time = frame * 1000 / fps;
   const map = createTimeMap(timeline);
   const sourceTime = map.toTimelineTime(time);
   const rail = railState(timeline, time);
-  const baseLayout = layoutFor(width, height, "macos");
+  const baseLayout = layoutFor(width, height, "macos", timeline);
   const screenShift = railScreenOffset(timeline, width, height, baseLayout.top, 1);
   const layout = { ...baseLayout, top: baseLayout.top + screenShift * rail.opacity };
   const screenOriginAt = (at: number) => ({ x: (width - baseLayout.screenWidth) / 2,
@@ -129,6 +141,9 @@ function Lab({ timeline, kind, concealProof = false, concealDisabled = false }: 
             Describe the source of funds
           </div>
           )}
+          {kind === "caption" ? <div style={{ position: "absolute", left: "50%", bottom: 12 * dsf,
+            transform: "translateX(-50%)", padding: `${12 * dsf}px ${32 * dsf}px`, borderRadius: 8 * dsf,
+            color: demoTheme.colors.surface, background: demoTheme.colors.accentPrimary, fontSize: 24 * dsf }}>Send request</div> : null}
           {incoming && !concealDisabled ? carryFlights(timeline).map((flight, index) => <CarryConcealer key={`conceal-${index}`}
             flight={flight} timeMs={time} deviceScaleFactor={dsf} cameraScale={camera.scale}
             frameScale={Math.min(width, height) / 1440} />) : null}
@@ -161,7 +176,9 @@ function Lab({ timeline, kind, concealProof = false, concealDisabled = false }: 
       {screen(true, camera, movement.incoming.opacity, movement.incoming)}
     </> : screen(incoming, camera, 1)}
     {projected ? <Transition event={projected} timeMs={time} frameWidth={width} /> : null}
-    {(kind === "rail" || kind === "cut" || kind === "carry-cut") ? <Rail state={rail} width={width} height={height} screenShift={screenShift} /> : null}
+    {(kind === "rail" || kind === "cut" || kind === "carry-cut" || kind === "caption") ? <Rail state={rail} width={width} height={height} screenShift={screenShift} /> : null}
+    {kind === "caption" ? timeline.events.map((event, index) => event.kind === "caption" ? <Caption key={index}
+      timeline={timeline} caption={event} timeMs={sourceTime} bandTop={layout.captionTop} bandHeight={layout.captionHeight} /> : null) : null}
     {!concealProof && (kind === "carry" || kind === "carry-cut") ? carryFlights(timeline).map((flight, index) => <Carry key={index} flight={flight} timeline={timeline}
       cameraPath={cameraPath} fps={fps} timeMs={time} width={width} height={height} screenOrigin={origin} screenOriginAt={screenOriginAt} />) : null}
   </AbsoluteFill>;
@@ -177,3 +194,5 @@ export const CarryCutLab = ({ concealProof = false, concealDisabled = false, pos
   <Lab timeline={postCutZoom ? { ...carryCutLabTimeline, durationMs: 9000,
     events: carryCutLabTimeline.events.map((event) => event.kind === "zoom" && event.t === 3300
       ? { ...event, t: 5540 } : event.kind === "land" ? { ...event, t: 7190 } : event) } : carryCutLabTimeline} kind="carry-cut" concealProof={concealProof} concealDisabled={concealDisabled} />;
+
+export const CaptionLab = () => <Lab timeline={captionLabTimeline} kind="caption" />;
