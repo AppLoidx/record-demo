@@ -201,6 +201,7 @@ export const demoTheme = {
   transition: {
     outMs: 450,
     minCardMs: 1500,
+    visibleCardMs: 1200,
     inMs: 560,
     outEasing: [0.65, 0, 0.35, 1],
     inEasing: [0.65, 0, 0.35, 1],

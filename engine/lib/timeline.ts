@@ -33,6 +33,7 @@ export type Timeline = {
         chapter?: Chapter;
         outMs: number;
         cardMs: number;
+        visibleCardMs?: number;
         inMs: number;
       }
     | { t: number; kind: "callout"; rect: Rect; text: string; holdMs: number; side: CalloutSide }
@@ -140,7 +141,9 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
         (value.chapter === undefined || isChapter(value.chapter)) &&
         [value.outMs, value.cardMs, value.inMs].every(
           (n) => isNumber(n) && n >= 0,
-        )
+        ) &&
+        (value.visibleCardMs === undefined ||
+          (isNumber(value.visibleCardMs) && value.visibleCardMs >= 0))
       );
     case "caption":
       return (

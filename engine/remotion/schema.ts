@@ -38,6 +38,7 @@ const timelineEventSchema = z.discriminatedUnion("kind", [
     chapter: z.object({ index: z.number().int().positive(), total: z.number().int().positive() }).optional(),
     outMs: z.number().nonnegative(),
     cardMs: z.number().nonnegative(),
+    visibleCardMs: z.number().nonnegative().optional(),
     inMs: z.number().nonnegative(),
   }),
   z.object({

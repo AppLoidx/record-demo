@@ -6,6 +6,7 @@ import { extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { parseTimeline, calloutTotalDuration, spotlightTotalDuration, windowTotalDuration, transitionTotalDuration } from "../lib/timeline.ts";
+import { createTimeMap } from "../lib/time-map.ts";
 
 // Match the runtime TypeScript resolution used by the motion scorer.
 registerHooks({
@@ -29,6 +30,7 @@ const engineRoot = fileURLToPath(new URL("../", import.meta.url));
 /** @param {import("../lib/timeline.ts").Timeline} timeline */
 export function computeFrameSheets(timeline, videoDurationMs, width = 2560, height = 1440) {
   const chronological = { ...timeline, events: [...timeline.events].sort((a, b) => a.t - b.t) };
+  const timeMap = createTimeMap(chronological);
   const camera = createSceneCameraPath(chronological, compositionFps, width, height);
   const zoomDurations = new Map(camera.moves.map((move) => [move.event, move.durationMs]));
   return chronological.events.flatMap((event) => {
@@ -40,8 +42,10 @@ export function computeFrameSheets(timeline, videoDurationMs, width = 2560, heig
     else if (event.kind === "transition") durationMs = transitionTotalDuration(event);
     else if (event.kind === "outro") durationMs = event.durationMs;
     else return [];
-    const startMs = Math.min(videoDurationMs, Math.max(0, event.t - 250));
-    const endMs = Math.min(videoDurationMs, event.t + durationMs + 500);
+    const eventStartMs = timeMap.toCompositionTime(event.t);
+    const eventEndMs = timeMap.toCompositionTime(event.t + durationMs);
+    const startMs = Math.min(videoDurationMs, Math.max(0, eventStartMs - 250));
+    const endMs = Math.min(videoDurationMs, eventEndMs + 500);
     return [{
       kind: event.kind,
       startMs,

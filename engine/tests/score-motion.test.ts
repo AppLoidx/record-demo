@@ -6,6 +6,41 @@ import { createCameraPath } from "../lib/camera";
 import fixtureTimeline from "../fixtures/timeline.json";
 
 describe("motion scoring", () => {
+  it("samples source time while reporting camera intervals in composition time", () => {
+    const timeline: Timeline = {
+      ...(fixtureTimeline as Timeline),
+      durationMs: 8_000,
+      events: [
+        {
+          t: 1_000,
+          kind: "transition",
+          label: "Cut",
+          outMs: 500,
+          cardMs: 3_000,
+          visibleCardMs: 1_000,
+          inMs: 500,
+        },
+        {
+          t: 3_000,
+          kind: "zoom",
+          rect: { x: 700, y: 400, width: 400, height: 225 },
+          durationMs: 100,
+        },
+      ],
+    };
+
+    const score = scoreTimeline(timeline);
+
+    expect(score.metrics.cameraMoves).toEqual({
+      count: 1,
+      durationsMs: [150],
+    });
+    expect(score.perMove[0]).toMatchObject({
+      startMs: 2_500,
+      durationMs: 150,
+    });
+  });
+
   it("keeps the existing overlapping fixture free of discontinuities", () => {
     const score = scoreTimeline(fixtureTimeline as Timeline);
     expect(score.metrics.smoothness.verdict).toBe("PASS");

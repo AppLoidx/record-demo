@@ -10,6 +10,10 @@ import {
   windowTotalDuration,
   transitionTotalDuration,
 } from "../lib/timeline.ts";
+import {
+  createTimeMap,
+  timelineFrameForCompositionFrame,
+} from "../lib/time-map.ts";
 
 // Static stretches at or above this duration read as dead air.
 const DEAD_AIR_THRESHOLD_MS = 3_500;
@@ -230,13 +234,18 @@ function eventEnd(event, zoomDurationMs) {
   return "durationMs" in event ? event.t + event.durationMs : undefined;
 }
 
-function cursorTravel(cursorPoints, startMs, endMs) {
+function cursorTravel(cursorPoints, startMs, endMs, timeMap) {
   const sampleTimes = cursorPoints
-    .filter((point) => point.t > startMs && point.t < endMs)
-    .map((point) => point.t);
+    .map((point) => timeMap.toCompositionTime(point.t))
+    .filter((timeMs) => timeMs > startMs && timeMs < endMs);
   const times = [startMs, ...sampleTimes, endMs];
   const positions = times
-    .map((timeMs) => cursorPositionFromPoints(cursorPoints, timeMs))
+    .map((timeMs) =>
+      cursorPositionFromPoints(
+        cursorPoints,
+        timeMap.toTimelineTime(timeMs),
+      ),
+    )
     .filter((position) => position !== null);
 
   return positions.slice(1).reduce((total, position, index) => {
@@ -249,15 +258,17 @@ export function detectDeadAirSpans(
   timeline,
   cameraPath = createSceneCameraPath(timeline, FPS, FRAME_WIDTH, FRAME_HEIGHT),
 ) {
+  const timeMap = createTimeMap(timeline);
   const zoomDurations = new Map(
     cameraPath.moves.map((move) => [move.event, move.durationMs]),
   );
   const scanEndMs = Math.max(
     0,
-    timeline.durationMs - DEAD_AIR_END_EXEMPTION_MS,
+    timeMap.durationMs - DEAD_AIR_END_EXEMPTION_MS,
   );
   const activityTimes = new Set([0, scanEndMs]);
-  const addActivityTime = (timeMs) => {
+  const addActivityTime = (timelineTimeMs) => {
+    const timeMs = timeMap.toCompositionTime(timelineTimeMs);
     if (timeMs >= 0 && timeMs <= scanEndMs) {
       activityTimes.add(timeMs);
     }
@@ -287,7 +298,13 @@ export function detectDeadAirSpans(
   }
 
   const outro = timeline.events.find((event) => event.kind === "outro");
-  const outroEndMs = outro ? eventEnd(outro) : undefined;
+  const outroStartMs = outro
+    ? timeMap.toCompositionTime(outro.t)
+    : undefined;
+  const outroTimelineEndMs = outro ? eventEnd(outro) : undefined;
+  const outroEndMs = outroTimelineEndMs === undefined
+    ? undefined
+    : timeMap.toCompositionTime(outroTimelineEndMs);
   const boundaries = [...activityTimes].sort((left, right) => left - right);
 
   return boundaries.slice(1).flatMap((endMs, index) => {
@@ -295,10 +312,11 @@ export function detectDeadAirSpans(
     const durationMs = endMs - startMs;
     const overlapsOutro =
       outro !== undefined &&
+      outroStartMs !== undefined &&
       outroEndMs !== undefined &&
       startMs < outroEndMs &&
-      endMs > outro.t;
-    const travel = cursorTravel(cursorPoints, startMs, endMs);
+      endMs > outroStartMs;
+    const travel = cursorTravel(cursorPoints, startMs, endMs, timeMap);
 
     if (
       durationMs < DEAD_AIR_THRESHOLD_MS ||
@@ -307,14 +325,14 @@ export function detectDeadAirSpans(
       timeline.events.some(
         (event) =>
           (event.kind === "callout" &&
-            startMs >= event.t &&
-            endMs <= event.t + calloutTotalDuration(event)) ||
+            startMs >= timeMap.toCompositionTime(event.t) &&
+            endMs <= timeMap.toCompositionTime(event.t + calloutTotalDuration(event))) ||
           (event.kind === "window" &&
-            startMs >= event.t &&
-            endMs <= event.t + windowTotalDuration(event)) ||
+            startMs >= timeMap.toCompositionTime(event.t) &&
+            endMs <= timeMap.toCompositionTime(event.t + windowTotalDuration(event))) ||
           (event.kind === "transition" &&
-            startMs >= event.t &&
-            endMs <= event.t + transitionTotalDuration(event)),
+            startMs >= timeMap.toCompositionTime(event.t) &&
+            endMs <= timeMap.toCompositionTime(event.t + transitionTotalDuration(event))),
       )
     ) {
       return [];
@@ -325,6 +343,7 @@ export function detectDeadAirSpans(
 }
 
 export function scoreTimeline(timeline) {
+  const timeMap = createTimeMap(timeline);
   const sourceWidth =
     timeline.viewport.width * timeline.viewport.deviceScaleFactor;
   const sourceHeight =
@@ -335,7 +354,7 @@ export function scoreTimeline(timeline) {
   );
   const frameCount = Math.max(
     1,
-    Math.ceil((timeline.durationMs / 1_000) * FPS),
+    Math.ceil((timeMap.durationMs / 1_000) * FPS),
   );
   const cameraPath = createSceneCameraPath(
     timeline,
@@ -344,13 +363,34 @@ export function scoreTimeline(timeline) {
     FRAME_HEIGHT,
   );
   const samples = Array.from({ length: frameCount }, (_, frame) =>
-    cameraPath.atFrame(frame),
+    cameraPath.atFrame(
+      timelineFrameForCompositionFrame(frame, FPS, timeMap),
+    ),
   );
+  const moves = timeMap.cuts.length === 0
+    ? cameraPath.moves
+    : cameraPath.moves.map((move) => {
+        const startMs = timeMap.toCompositionTime(move.startMs);
+        const endMs = timeMap.toCompositionTime(
+          move.startMs + move.durationMs,
+        );
+        const durationMs = Math.max(0, endMs - startMs);
+        return {
+          ...move,
+          startMs,
+          startFrame: (startMs / 1_000) * FPS,
+          durationMs,
+          durationFrames: Math.max(
+            1,
+            Math.round((durationMs / 1_000) * FPS),
+          ),
+        };
+      });
 
   return {
     ...scoreCameraSeries(
       samples,
-      cameraPath.moves,
+      moves,
       FPS,
       baseScale,
       FRAME_WIDTH,
@@ -358,8 +398,12 @@ export function scoreTimeline(timeline) {
         timeline.events.some(
           (event) =>
             event.kind === "transition" &&
-            (frame * 1000) / FPS >= event.t + event.outMs &&
-            (frame * 1000) / FPS <= event.t + event.outMs + event.cardMs,
+            (frame * 1000) / FPS >=
+              timeMap.toCompositionTime(event.t + event.outMs) &&
+            (frame * 1000) / FPS <=
+              timeMap.toCompositionTime(
+                event.t + event.outMs + event.cardMs,
+              ),
         ),
     ),
     deadAirSpans: detectDeadAirSpans(timeline, cameraPath),

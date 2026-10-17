@@ -5,6 +5,7 @@ import {
 } from "remotion";
 import fixtureTimeline from "../fixtures/timeline.json";
 import { assertTimeline } from "../lib/timeline";
+import { compositionDurationInFrames } from "../lib/time-map";
 import {
   assertDemoVideoProps,
   DemoVideo,
@@ -22,15 +23,15 @@ const defaultProps: DemoVideoProps = {
   windowChrome: "macos",
 };
 
-const calculateMetadata: CalculateMetadataFunction<DemoVideoProps> = ({
+export const calculateMetadata: CalculateMetadataFunction<DemoVideoProps> = ({
   props,
 }) => {
   assertDemoVideoProps(props);
 
   return {
-    durationInFrames: Math.max(
-      1,
-      Math.ceil((props.timeline.durationMs / 1_000) * compositionFps),
+    durationInFrames: compositionDurationInFrames(
+      props.timeline,
+      compositionFps,
     ),
     fps: compositionFps,
   };
@@ -47,8 +48,9 @@ export function RemotionRoot() {
           width={composition.width}
           height={composition.height}
           fps={compositionFps}
-          durationInFrames={Math.ceil(
-            (defaultProps.timeline.durationMs / 1_000) * compositionFps,
+          durationInFrames={compositionDurationInFrames(
+            defaultProps.timeline,
+            compositionFps,
           )}
           defaultProps={defaultProps}
           calculateMetadata={calculateMetadata}

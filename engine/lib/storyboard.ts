@@ -368,15 +368,30 @@ export class Storyboard {
   async transition(
     label: string,
     action: StoryboardAction,
-    options: { role?: string; minCardMs?: number; chapter?: Chapter } = {},
+    options: {
+      role?: string;
+      minCardMs?: number;
+      visibleCardMs?: number;
+      chapter?: Chapter;
+    } = {},
   ) {
     this.beginEffect("transition");
     const transitionEvents: TimelineEvent[] = [];
     try {
-      const { role, chapter, minCardMs = demoTheme.transition.minCardMs } = options;
+      const {
+        role,
+        chapter,
+        minCardMs = demoTheme.transition.minCardMs,
+        visibleCardMs,
+      } = options;
       if (chapter !== undefined && !isChapter(chapter)) throw new Error("Invalid transition chapter");
       if (!Number.isFinite(minCardMs) || minCardMs < 0)
         throw new Error("Invalid transition minCardMs");
+      if (
+        visibleCardMs !== undefined &&
+        (!Number.isFinite(visibleCardMs) || visibleCardMs < 0)
+      )
+        throw new Error("Invalid transition visibleCardMs");
       await this.ensureStarted();
       const t = this.now();
       const { outMs, inMs } = demoTheme.transition;
@@ -409,6 +424,7 @@ export class Storyboard {
         ...(chapter === undefined ? {} : { chapter }),
         outMs,
         cardMs: minCardMs,
+        ...(visibleCardMs === undefined ? {} : { visibleCardMs }),
         inMs,
       };
       this.events.push(event);

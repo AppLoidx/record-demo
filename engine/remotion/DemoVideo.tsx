@@ -16,6 +16,12 @@ import {
   transitionTotalDuration,
 } from "../lib/timeline";
 import { createSceneCameraPath } from "../lib/scene-camera";
+import {
+  compositionFrameAtOrAfterTime,
+  createTimeMap,
+  timelineFrameForCompositionFrame,
+  transitionVisibleCardMs,
+} from "../lib/time-map";
 import { WindowInset, windowMotion } from "./WindowInset";
 import { Transition, transitionMotion } from "./Transition";
 import { Callout } from "./Callout";
@@ -52,15 +58,24 @@ export function buildStudioTracks(
     timeline.viewport.height * timeline.viewport.deviceScaleFactor,
   ),
 ) {
+  const timeMap = createTimeMap(timeline);
   const timedTrack = <T extends TimelineEvent>(
     event: T,
     name: string,
     durationMs: number,
-  ): TimedTrack<T> => ({
-    name,
-    ...msToFrameWindow(event.t, durationMs, fps),
-    event,
-  });
+  ): TimedTrack<T> => {
+    const startMs = timeMap.cuts.length === 0
+      ? event.t
+      : timeMap.toCompositionTime(event.t);
+    const endMs = timeMap.cuts.length === 0
+      ? event.t + durationMs
+      : timeMap.toCompositionTime(event.t + durationMs);
+    return {
+      name,
+      ...msToFrameWindow(startMs, Math.max(0, endMs - startMs), fps),
+      event,
+    };
+  };
   const captions = timeline.events
     .filter((event): event is CaptionEvent => event.kind === "caption")
     .map((event) =>
@@ -91,25 +106,47 @@ export function buildStudioTracks(
     );
   const transitions = timeline.events
     .filter((event) => event.kind === "transition")
-    .map((event) =>
-      timedTrack(
-        event,
-        `Transition: ${event.label}`,
-        transitionTotalDuration(event),
-      ),
-    );
+    .map((event) => {
+      const projected = timeMap.cuts.length === 0
+        ? event
+        : {
+            ...event,
+            t: timeMap.toCompositionTime(event.t),
+            cardMs: transitionVisibleCardMs(event),
+          };
+      return {
+        name: `Transition: ${event.label}`,
+        ...msToFrameWindow(
+          projected.t,
+          transitionTotalDuration(projected),
+          fps,
+        ),
+        event: projected,
+      };
+    });
   const roleEvents = timeline.events
     .filter((event) => event.kind === "role")
     .sort((a, b) => a.t - b.t);
-  const roles = roleEvents.map((event, index) =>
-    timedTrack(
+  const roles = roleEvents.map((event, index) => {
+    const next = roleEvents[index + 1];
+    if (timeMap.cuts.length === 0) {
+      return timedTrack(
+        event,
+        `Role: ${event.label}`,
+        (next?.t ?? (durationInFrames * 1000) / fps) - event.t +
+          (next ? demoTheme.role.fadeMs : 0),
+      );
+    }
+    const startMs = timeMap.toCompositionTime(event.t);
+    const endMs = next
+      ? timeMap.toCompositionTime(next.t + demoTheme.role.fadeMs)
+      : (durationInFrames * 1_000) / fps;
+    return {
+      name: `Role: ${event.label}`,
+      ...msToFrameWindow(startMs, Math.max(0, endMs - startMs), fps),
       event,
-      `Role: ${event.label}`,
-      (roleEvents[index + 1]?.t ?? (durationInFrames * 1000) / fps) -
-        event.t +
-        (roleEvents[index + 1] ? demoTheme.role.fadeMs : 0),
-    ),
-  );
+    };
+  });
   const outroEvent = timeline.events.find(
     (event): event is OutroEvent => event.kind === "outro",
   );
@@ -127,9 +164,17 @@ export function buildStudioTracks(
       ? (() => {
           // The slate must persist to the video's final frame even when the
           // composition runs past t + durationMs (trailing capture time).
+          const startMs = timeMap.cuts.length === 0
+            ? outroEvent.t
+            : timeMap.toCompositionTime(outroEvent.t);
+          const endMs = timeMap.cuts.length === 0
+            ? outroEvent.t + outroEvent.durationMs
+            : timeMap.toCompositionTime(
+                outroEvent.t + outroEvent.durationMs,
+              );
           const window = msToFrameWindow(
-            outroEvent.t,
-            outroEvent.durationMs,
+            startMs,
+            Math.max(0, endMs - startMs),
             fps,
           );
           return {
@@ -273,6 +318,7 @@ export function DemoVideo(props: DemoVideoProps) {
   const frame = useCurrentFrame();
   const { fps, width, height, durationInFrames } = useVideoConfig();
   const layout = layoutFor(width, height, props.windowChrome);
+  const timeMap = useMemo(() => createTimeMap(props.timeline), [props.timeline]);
   const cameraPath = useMemo(
     () =>
       createSceneCameraPath(
@@ -283,41 +329,57 @@ export function DemoVideo(props: DemoVideoProps) {
       ),
     [props.timeline, fps, layout.screenWidth, layout.screenHeight],
   );
-  const camera = cameraPath.atFrame(frame);
+  const sourceFrame = timelineFrameForCompositionFrame(frame, fps, timeMap);
+  const camera = cameraPath.atFrame(sourceFrame);
   const videoSrc = resolveVideoSrc(props.videoSrc);
   const radius = Math.max(
     demoTheme.layout.minimumWindowRadius,
     layout.screenWidth * demoTheme.layout.windowRadiusRatio,
   );
-  const timeMs = (frame / fps) * 1_000;
-  const outro = resolveOutro(props.timeline, timeMs);
+  const compositionTimeMs = (frame / fps) * 1_000;
+  const sourceTimeMs = timeMap.cuts.length === 0
+    ? compositionTimeMs
+    : timeMap.toTimelineTime(compositionTimeMs);
+  const outro = resolveOutro(props.timeline, sourceTimeMs);
   const windowEvent = props.timeline.events.find(
     (event) =>
       event.kind === "window" &&
-      event.t <= timeMs &&
-      timeMs < event.t + windowTotalDuration(event),
+      event.t <= sourceTimeMs &&
+      sourceTimeMs < event.t + windowTotalDuration(event),
   );
   const inset = windowMotion(
     windowEvent?.kind === "window" ? windowEvent : undefined,
-    timeMs,
+    sourceTimeMs,
   );
-  const transitionEvent = props.timeline.events.find(
-    (event) =>
-      event.kind === "transition" &&
-      event.t <= timeMs &&
-      timeMs < event.t + transitionTotalDuration(event),
-  );
-  const activeTransition = transitionEvent?.kind === "transition" ? transitionEvent : undefined;
-  const transition = transitionMotion(activeTransition, timeMs);
-  const outgoingFrame = activeTransition ? Math.max(0, msToFrame(activeTransition.t, fps) - 1) : 0;
-  const outgoingCamera = cameraPath.atFrame(outgoingFrame);
-  const outroScreen = outroScreenMotion(outro.event ? timeMs - outro.event.t : -1);
-  const outroScale = outroScreen.scale;
-  const screenOpacity = outroScreen.opacity;
   const tracks = useMemo(
     () => buildStudioTracks(props.timeline, fps, durationInFrames, cameraPath),
     [props.timeline, fps, durationInFrames, cameraPath],
   );
+  const activeTransition = tracks.transitions.find(
+    ({ event }) =>
+      event.t <= compositionTimeMs &&
+      compositionTimeMs < event.t + transitionTotalDuration(event),
+  )?.event;
+  const transition = transitionMotion(activeTransition, compositionTimeMs);
+  const outgoingFrame = activeTransition
+    ? Math.max(
+        0,
+        (timeMap.cuts.length === 0
+          ? msToFrame(activeTransition.t, fps)
+          : compositionFrameAtOrAfterTime(activeTransition.t, fps)) - 1,
+      )
+    : 0;
+  const outgoingSourceFrame = timelineFrameForCompositionFrame(
+    outgoingFrame,
+    fps,
+    timeMap,
+  );
+  const outgoingCamera = cameraPath.atFrame(outgoingSourceFrame);
+  const outroScreen = outroScreenMotion(
+    outro.event ? sourceTimeMs - outro.event.t : -1,
+  );
+  const outroScale = outroScreen.scale;
+  const screenOpacity = outroScreen.opacity;
 
   return (
     <AbsoluteFill
@@ -348,7 +410,8 @@ export function DemoVideo(props: DemoVideoProps) {
               <Freeze frame={outgoingFrame}>
                 <Screen width={layout.screenWidth} height={layout.screenHeight} radius={radius}
                   chrome={props.windowChrome} chromeHeight={layout.chromeHeight} timeline={props.timeline}
-                  videoSrc={videoSrc} camera={outgoingCamera} showCursor={false} />
+                  videoSrc={videoSrc} camera={outgoingCamera} showCursor={false}
+                  timeMap={timeMap} timeMs={sourceTimeMs} />
               </Freeze>
             </div>
           ) : null}
@@ -356,11 +419,11 @@ export function DemoVideo(props: DemoVideoProps) {
             transform: `translateX(${activeTransition ? transition.incoming.translateX * width : 0}px) scale(${outroScale * inset.mainScale * (activeTransition ? transition.incoming.scale : 1)})` }}>
             <Screen width={layout.screenWidth} height={layout.screenHeight} radius={radius} chrome={props.windowChrome}
               chromeHeight={layout.chromeHeight} timeline={props.timeline} videoSrc={videoSrc} camera={camera}
-              showCursor={!outro.started && !activeTransition}>
+              showCursor={!outro.started && !activeTransition} timeMap={timeMap} timeMs={sourceTimeMs}>
               {tracks.spotlights.map((track) => (
                 <Sequence key={`spotlight-${track.event.t}`} name={track.name} from={track.from}
                   durationInFrames={track.durationInFrames} layout="none">
-                  <SpotlightTrack timeline={props.timeline} spotlight={track.event} timeMs={timeMs} />
+                  <SpotlightTrack timeline={props.timeline} spotlight={track.event} timeMs={sourceTimeMs} />
                 </Sequence>
               ))}
             </Screen>
@@ -370,7 +433,7 @@ export function DemoVideo(props: DemoVideoProps) {
                   <Sequence key={`callout-${track.event.t}`} name={track.name} from={track.from}
                     durationInFrames={track.durationInFrames} layout="none">
                     {outro.started || activeTransition ? null : (
-                      <Callout event={track.event} timeMs={timeMs} timeline={props.timeline} camera={camera}
+                      <Callout event={track.event} timeMs={sourceTimeMs} timeline={props.timeline} camera={camera}
                         width={layout.screenWidth} height={layout.screenHeight} />
                     )}
                   </Sequence>
@@ -391,7 +454,7 @@ export function DemoVideo(props: DemoVideoProps) {
         >
           <WindowInset
             event={track.event}
-            timeMs={timeMs}
+            timeMs={sourceTimeMs}
             frameWidth={width}
             frameHeight={height}
           />
@@ -405,12 +468,12 @@ export function DemoVideo(props: DemoVideoProps) {
           durationInFrames={track.durationInFrames}
           layout="none"
         >
-          <Transition event={track.event} timeMs={timeMs} frameWidth={width} />
+          <Transition event={track.event} timeMs={compositionTimeMs} frameWidth={width} />
         </Sequence>
       ))}
       <RoleBadge
         timeline={props.timeline}
-        timeMs={timeMs}
+        timeMs={sourceTimeMs}
         outroProgress={outro.progress}
         frameWidth={width}
         frameHeight={height}
@@ -441,7 +504,7 @@ export function DemoVideo(props: DemoVideoProps) {
               timeline={props.timeline}
               caption={track.event}
               bottom={layout.captionBottom}
-              timeMs={timeMs}
+              timeMs={sourceTimeMs}
             />
           </div>
         </Sequence>
@@ -465,7 +528,7 @@ export function DemoVideo(props: DemoVideoProps) {
           durationInFrames={tracks.outro.durationInFrames}
           layout="none"
         >
-          <Outro outro={outro} frameWidth={width} timeMs={timeMs} />
+          <Outro outro={outro} frameWidth={width} timeMs={sourceTimeMs} />
         </Sequence>
       ) : null}
     </AbsoluteFill>

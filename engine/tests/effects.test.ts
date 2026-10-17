@@ -100,17 +100,17 @@ describe("multi-actor timeline", () => {
       "Role: Customer",
       "Role: Ops",
     ]);
-    expect(tracks.roles[0]!.durationInFrames).toBe(675);
+    expect(tracks.roles[0]!.durationInFrames).toBe(575);
   });
   it("sheets cover whole effects", () => {
     expect(computeFrameSheets(timeline, timeline.durationMs)).toMatchObject([
       { kind: "window", startMs: 750, endMs: 7340 },
-      { kind: "transition", startMs: 7750, endMs: 14340 },
+      { kind: "transition", startMs: 7750, endMs: 10540 },
     ]);
   });
   it("exempts holds/cards but flags static time afterward", () => {
     expect(detectDeadAirSpans(timeline)).toEqual([
-      { startMs: 13840, durationMs: 5160, verdict: "WARN" },
+      { startMs: 10040, durationMs: 5160, verdict: "WARN" },
     ]);
   });
 });

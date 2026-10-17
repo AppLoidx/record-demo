@@ -97,6 +97,20 @@ describe("multi-actor storyboard", () => {
     expect(events[0]).toMatchObject({ chapter: { index: 2, total: 5 }, outMs: 450, cardMs: 1900, inMs: 560 });
     await expect(d.transition("Invalid", async () => {}, { chapter: { index: 6, total: 5 } })).rejects.toThrow(/chapter/);
   });
+  it("persists a visible card override and rejects invalid values", async () => {
+    const { d, events } = setup();
+    await d.transition("Quick card", async () => {}, {
+      minCardMs: 2_000,
+      visibleCardMs: 725,
+    });
+    expect(events.find((event) => event.kind === "transition")).toMatchObject({
+      cardMs: 2_000,
+      visibleCardMs: 725,
+    });
+    await expect(
+      d.transition("Invalid", async () => {}, { visibleCardMs: -1 }),
+    ).rejects.toThrow(/visibleCardMs/);
+  });
   it("records a measured callout without waiting for its animation lifetime", async () => {
     const { d, events, page } = setup();
     const target = {

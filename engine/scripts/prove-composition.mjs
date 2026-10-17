@@ -29,6 +29,7 @@ const windowName = "composition-proof-window-1.png";
 const windowPath = path.join(publicDir, windowName);
 const sourcePath = path.join(publicDir, sourceName);
 const sourceStillPath = path.join(publicDir, "composition-proof-ui.png");
+const beforeStillPath = path.join(publicDir, "composition-proof-before.png");
 const propsPath = path.join(outputDir, "composition-proof-props.json");
 const presets = compositionPresets.map(({ id }) => id);
 
@@ -80,6 +81,12 @@ async function main() {
   try {
     await capture.render({ html: `<html><body style="margin:0;height:1080px;box-sizing:border-box;padding:80px;background:#fff;color:#333;font-family:Arial">
       <nav style="font-size:28px;border-bottom:1px solid #ddd;padding-bottom:32px">Accounts　　Payments　　Team</nav>
+      <h1 style="font-size:52px;margin-top:100px">Account request pending</h1>
+      <p style="font-size:34px;color:#777">The team is reviewing your business details.</p>
+      <section style="margin-top:90px;font-size:38px;line-height:2">Example Company<br>Status: In review<br>Account details will appear after approval</section>
+      </body></html>` }, { width: 1920 }, "composition-proof-before.png");
+    await capture.render({ html: `<html><body style="margin:0;height:1080px;box-sizing:border-box;padding:80px;background:#fff;color:#333;font-family:Arial">
+      <nav style="font-size:28px;border-bottom:1px solid #ddd;padding-bottom:32px">Accounts　　Payments　　Team</nav>
       <h1 style="font-size:52px;margin-top:100px">Named account issued</h1>
       <p style="font-size:34px;color:#777">Your USD account is ready to receive payments.</p>
       <section style="margin-top:90px;display:flex;justify-content:space-between;font-size:38px;line-height:2">
@@ -108,17 +115,20 @@ async function main() {
       } finally { await rm(path.join(publicDir, image), { force: true }); }
     }
   } finally { await capture.close(); }
-  const timeline = { ...fixture, durationMs: 14800, events: [
+  const timeline = { ...fixture, durationMs: 16800, events: [
     ...fixture.events,
     { t: 0, kind: "role", label: "Customer" },
     { t: 3400, kind: "window", ...windowAsset,
       title: "Inbox", enterMs: demoTheme.window.enterMs, holdMs: 2600, exitMs: demoTheme.window.exitMs, click: true },
     { t: 7400, kind: "transition", label: "Review the request", role: "Ops", chapter: { index: 2, total: 5 },
-      outMs: demoTheme.transition.outMs, cardMs: demoTheme.transition.minCardMs, inMs: demoTheme.transition.inMs },
-    { t: 8600, kind: "role", label: "Ops" },
-    { t: 11000, kind: "caption", text: "The account is ready", durationMs: 3200 },
-    { t: 11800, kind: "outro", title: "Named account: requested, reviewed, approved, issued.", durationMs: 2400 },
-    { t: 10500, kind: "callout", rect: { x: 1000, y: 500, width: 240, height: 90 },
+      outMs: demoTheme.transition.outMs, cardMs: 3500, inMs: demoTheme.transition.inMs },
+    { t: 9600, kind: "role", label: "Ops" },
+    { t: 11000, kind: "cursor", x: 1450, y: 530 },
+    { t: 12200, kind: "caption", text: "The account is ready", durationMs: 1500 },
+    { t: 12400, kind: "cursor", x: 1450, y: 530 },
+    { t: 12400, kind: "click", x: 1450, y: 530 },
+    { t: 13800, kind: "outro", title: "Named account: requested, reviewed, approved, issued.", durationMs: 2400 },
+    { t: 12500, kind: "callout", rect: { x: 1000, y: 500, width: 240, height: 90 },
       text: "Merchant is notified by email", holdMs: 1800, side: "right" },
   ].sort((a, b) => a.t - b.t) };
   await writeFile(path.join(outputDir, "composition-proof-timeline.json"), `${JSON.stringify(timeline, null, 2)}\n`);
@@ -132,7 +142,17 @@ async function main() {
     "-framerate",
     "30",
     "-i",
+    beforeStillPath,
+    "-loop",
+    "1",
+    "-framerate",
+    "30",
+    "-i",
     sourceStillPath,
+    "-filter_complex",
+    "[0:v][1:v]overlay=enable='gte(t,10.8)':shortest=1[v]",
+    "-map",
+    "[v]",
     "-t",
     durationSeconds.toFixed(3),
     "-an",
@@ -207,14 +227,24 @@ async function main() {
       );
     }
 
-    const framesDir = path.join(outputDir, "motion-round2-frames");
+    // 3500ms captured card - 1200ms visible card = exactly 2300ms removed.
+    const expectedSeconds = (timeline.durationMs - 2300) / 1000;
+    if (Math.abs(duration - expectedSeconds) > 1 / 60) {
+      throw new Error(`Elastic proof duration: expected ${expectedSeconds}s, got ${duration}s`);
+    }
+
+    const framesDir = path.join(outputDir, "elastic-proof-frames");
     await mkdir(framesDir, { recursive: true });
-    for (const [label, seconds] of [["role-swap", 8.82], ["card-stagger", 8.2], ["card-in", 8.8], ["callout", 11.65], ["window-in", 5.22], ["outro-start", 11.8], ["outro-caption-fade", 12.1], ["outro-stagger", 13.05], ["outro-landings", 13.3], ["outro-final", duration - 1 / 60]]) {
+    for (const [label, seconds] of [["before-card", 7.3], ["card-stagger", 8.2], ["card-in", 8.6],
+      ["cut-before", 9.05 - 1 / 60], ["cut-after", 9.05], ["after-card", 9.8],
+      ["caption-cursor", 10.5], ["callout", 11.0], ["window-in", 5.22],
+      ["outro-start", 11.5], ["outro-caption-fade", 11.8], ["outro-stagger", 12.75],
+      ["outro-landings", 13.0], ["outro-final", duration - 1 / 60]]) {
       await run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-ss", String(seconds), "-i", outputPath,
         "-frames:v", "1", path.join(framesDir, `${preset}-${label}.png`)]);
     }
     console.log(
-      `Composition proof passed: ${path.relative(demosRoot, outputPath)} (${duration.toFixed(2)}s)`,
+      `Composition proof passed: ${path.relative(demosRoot, outputPath)} (${(timeline.durationMs / 1000).toFixed(2)}s -> ${duration.toFixed(2)}s; cut 2300ms)`,
     );
   }
 }
@@ -226,7 +256,7 @@ try {
   process.exitCode = 1;
 } finally {
   await Promise.all(
-    [sourcePath, sourceStillPath, windowPath, propsPath].map((filePath) =>
+    [sourcePath, sourceStillPath, beforeStillPath, windowPath, propsPath].map((filePath) =>
       rm(filePath, { force: true }),
     ),
   );

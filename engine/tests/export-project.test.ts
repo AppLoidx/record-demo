@@ -98,6 +98,7 @@ describe("exportProject", () => {
       "lib/cursor-position.ts",
       "lib/cursor.ts",
       "lib/scene-camera.ts",
+      "lib/time-map.ts",
       "lib/timeline.ts",
       "lib/typography.ts",
       "package.json",

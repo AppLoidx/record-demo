@@ -1,4 +1,4 @@
-import { interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+import { interpolate } from "remotion";
 import { cursorPosition } from "../lib/cursor-position";
 import { windowTotalDuration, transitionTotalDuration, type Timeline } from "../lib/timeline";
 import { demoTheme } from "./theme";
@@ -7,6 +7,7 @@ import type { CameraTransform } from "./zoom";
 type CursorProps = {
   timeline: Timeline;
   camera: CameraTransform;
+  timeMs: number;
 };
 
 function latestClick(timeline: Timeline, timeMs: number) {
@@ -29,10 +30,7 @@ export function cursorVisibility(timeline: Timeline, timeMs: number) {
   return opacity;
 }
 
-export function Cursor({ timeline, camera }: CursorProps) {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const timeMs = (frame / fps) * 1_000;
+export function Cursor({ timeline, camera, timeMs }: CursorProps) {
   const position = cursorPosition(timeline, timeMs);
 
   if (!position) return null;
