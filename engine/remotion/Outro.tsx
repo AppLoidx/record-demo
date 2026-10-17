@@ -45,7 +45,7 @@ export function parseOutroTitle(title: string) {
   const lead = title.slice(0, colon).trim();
   const steps = colon < 0 ? [] : title.slice(colon + 1).split(/[:,]/).map((step) => step.trim()).filter(Boolean);
   return colon > 0 && lead && steps.length > 1
-    ? { lead, steps, text: steps.join(" ") }
+    ? { lead, steps, text: steps.map((step, index) => (index < steps.length - 1 ? `${step},` : step)).join(" ") }
     : { lead: undefined, steps: [], text: title };
 }
 

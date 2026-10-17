@@ -47,7 +47,7 @@ describe("kinetic outro slate", () => {
   it("parses colon-led comma/colon steps, preserving plain titles", () => {
     expect(parseOutroTitle("Named account: requested, reviewed, approved, issued.")).toEqual({
       lead: "Named account", steps: ["requested", "reviewed", "approved", "issued."],
-      text: "requested reviewed approved issued.",
+      text: "requested, reviewed, approved, issued.",
     });
     expect(parseOutroTitle("Account: requested: reviewed: issued").steps).toEqual(["requested", "reviewed", "issued"]);
     for (const title of ["All done.", "Requested, reviewed, approved.", "Account: ready", "Account: , ,"]) {
