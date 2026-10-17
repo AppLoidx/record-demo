@@ -22,7 +22,7 @@ import { Callout } from "./Callout";
 import { RoleBadge } from "./RoleBadge";
 import { Background } from "./Background";
 import { Caption } from "./Captions";
-import { Outro, resolveOutro } from "./Outro";
+import { Outro, outroScreenMotion, resolveOutro } from "./Outro";
 import { Screen, type WindowChrome } from "./Screen";
 import {
   type SpotlightEvent,
@@ -311,9 +311,9 @@ export function DemoVideo(props: DemoVideoProps) {
   const transition = transitionMotion(activeTransition, timeMs);
   const outgoingFrame = activeTransition ? Math.max(0, msToFrame(activeTransition.t, fps) - 1) : 0;
   const outgoingCamera = cameraPath.atFrame(outgoingFrame);
-  const outroScale = 1 - outro.progress * (1 - demoTheme.outro.recedeScale);
-  const screenOpacity =
-    1 - outro.progress * (1 - demoTheme.outro.screenOpacity);
+  const outroScreen = outroScreenMotion(outro.event ? timeMs - outro.event.t : -1);
+  const outroScale = outroScreen.scale;
+  const screenOpacity = outroScreen.opacity;
   const tracks = useMemo(
     () => buildStudioTracks(props.timeline, fps, durationInFrames, cameraPath),
     [props.timeline, fps, durationInFrames, cameraPath],
@@ -436,14 +436,14 @@ export function DemoVideo(props: DemoVideoProps) {
           durationInFrames={track.durationInFrames}
           layout="none"
         >
-          {outro.started ? null : (
+          <div style={{ opacity: 1 - outro.progress }}>
             <Caption
               timeline={props.timeline}
               caption={track.event}
               bottom={layout.captionBottom}
               timeMs={timeMs}
             />
-          )}
+          </div>
         </Sequence>
       ))}
       {tracks.zooms.map((track) => (
@@ -465,7 +465,7 @@ export function DemoVideo(props: DemoVideoProps) {
           durationInFrames={tracks.outro.durationInFrames}
           layout="none"
         >
-          <Outro outro={outro} frameWidth={width} />
+          <Outro outro={outro} frameWidth={width} timeMs={timeMs} />
         </Sequence>
       ) : null}
     </AbsoluteFill>

@@ -1,6 +1,7 @@
 import { Easing } from "remotion";
 import { transitionTotalDuration, type TransitionEvent } from "../lib/timeline";
 import { clamp } from "../lib/typography";
+import { SlateStepper, SlateVeil } from "./Slate";
 import { KineticWords } from "./KineticWords";
 import { demoTheme } from "./theme";
 
@@ -52,7 +53,6 @@ export function Transition({ event, timeMs, frameWidth }: {
   const exitAge = age - event.cardMs + exitMs;
   const eyebrow = typeEase(phase(age, tokens.eyebrowMs));
   const progress = chapterProgress(event, age);
-  const frameScale = frameWidth / 2560;
   const fontSize = frameWidth * demoTheme.outro.titleSizeRatio;
   const eyebrowText = [event.chapter ? `STEP ${event.chapter.index} OF ${event.chapter.total}` : undefined,
     event.role?.toUpperCase()].filter(Boolean).join(" · ");
@@ -61,8 +61,7 @@ export function Transition({ event, timeMs, frameWidth }: {
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center",
       justifyContent: "center", textAlign: "center", padding: "0 8%", pointerEvents: "none",
       fontFamily: demoTheme.fontFamily, color: demoTheme.colors.contentPrimary }}>
-      <div style={{ position: "absolute", inset: 0, opacity: eyebrow * progress.opacity,
-        background: `radial-gradient(ellipse ${frameWidth * 0.45}px ${frameWidth * 0.25}px at center, color-mix(in srgb, ${demoTheme.colors.backdrop} 92%, transparent) 0%, transparent 100%)` }} />
+      <SlateVeil frameWidth={frameWidth} opacity={eyebrow * progress.opacity} />
       <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
       {eyebrowText ? <div style={{ fontSize: tokens.eyebrowSize, fontWeight: 500, letterSpacing: tokens.eyebrowSpacing,
         color: demoTheme.colors.contentSecondary, marginBottom: tokens.eyebrowGap, opacity: eyebrow * progress.opacity,
@@ -72,16 +71,9 @@ export function Transition({ event, timeMs, frameWidth }: {
           staggerMs={tokens.wordStaggerMs} budgetMs={Math.max(0, event.cardMs - exitMs - titleDelay)}
           offset={tokens.wordOffset} letterSpacing={tokens.wordLetterSpacing} exitAgeMs={exitAge} exitBudgetMs={exitMs} />
       </div>
-      {event.chapter ? <div style={{ display: "flex", gap: tokens.segmentGap * frameScale,
-        marginTop: tokens.stepperGap * frameScale, opacity: progress.opacity }}>
-          {Array.from({ length: event.chapter.total }, (_, i) => <div key={i} style={{ position: "relative",
-            width: tokens.segmentWidth * frameScale,
-            height: tokens.segmentHeight * frameScale, borderRadius: tokens.segmentRadius * frameScale, overflow: "hidden", background: demoTheme.colors.line }}>
-            <div style={{ position: "absolute", inset: 0, background: demoTheme.colors.accentPrimary,
-              transform: `scaleX(${i + 1 < event.chapter!.index ? 1 : i + 1 === event.chapter!.index ? progress.current : 0})`,
-              transformOrigin: "left" }} />
-          </div>)}
-      </div> : null}
+      {event.chapter ? <SlateStepper frameWidth={frameWidth} opacity={progress.opacity}
+        fills={Array.from({ length: event.chapter.total }, (_, i) =>
+          i + 1 < event.chapter!.index ? 1 : i + 1 === event.chapter!.index ? progress.current : 0)} /> : null}
       </div>
     </div>
   );

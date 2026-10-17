@@ -115,6 +115,7 @@ describe("exportProject", () => {
       "remotion/RoleBadge.tsx",
       "remotion/Root.tsx",
       "remotion/Screen.tsx",
+      "remotion/Slate.tsx",
       "remotion/Spotlight.tsx",
       "remotion/Transition.tsx",
       "remotion/WindowInset.tsx",

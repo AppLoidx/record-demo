@@ -243,10 +243,20 @@ export const demoTheme = {
     background: "rgba(255, 255, 255, 0.9)",
     shadow: "0 4px 14px rgba(33, 27, 51, 0.06)",
   },
+  slate: {
+    referenceWidth: 2560,
+    widthRatio: 0.45,
+    heightRatio: 0.25,
+    strengthPercent: 100,
+    innerStopPercent: 65,
+  },
   outro: {
     enterDurationMs: 600,
-    recedeScale: 0.94,
-    screenOpacity: 0.35,
+    screenDurationMs: 2400,
+    titleDelayMs: 1000,
+    recedeScale: 0.84,
+    screenOpacity: 0.07,
+    holdMs: 600,
     titleSizeRatio: 64 / 2_560,
   },
 } as const;

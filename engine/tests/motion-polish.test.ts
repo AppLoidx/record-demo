@@ -61,7 +61,7 @@ describe("kinetic word timing and stepper", () => {
     expect(html).toContain(`gap:${10 * scale}px;margin-top:${28 * scale}px`);
     expect(html).toContain(`border-radius:${3 * scale}px`);
     expect(html).toContain("scaleX(0.5)");
-    expect(html).toContain("92%, transparent)");
+    expect(html).toContain(`${demoTheme.slate.strengthPercent}%, transparent)`);
   });
 
   it("staggered words have exact start/end and cap to the available card budget", () => {
