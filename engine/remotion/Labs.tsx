@@ -171,5 +171,9 @@ export const CarryLab = () => <Lab timeline={carryLabTimeline} kind="carry" />;
 export const CalloutLab = () => <Lab timeline={calloutLabTimeline} kind="callout" />;
 
 export const CutLab = () => <Lab timeline={cutLabTimeline} kind="cut" />;
-export const CarryCutLab = ({ concealProof = false, concealDisabled = false }: { concealProof?: boolean; concealDisabled?: boolean }) =>
-  <Lab timeline={carryCutLabTimeline} kind="carry-cut" concealProof={concealProof} concealDisabled={concealDisabled} />;
+export const CarryCutLab = ({ concealProof = false, concealDisabled = false, postCutZoom = false }: {
+  concealProof?: boolean; concealDisabled?: boolean; postCutZoom?: boolean;
+}) =>
+  <Lab timeline={postCutZoom ? { ...carryCutLabTimeline, durationMs: 9000,
+    events: carryCutLabTimeline.events.map((event) => event.kind === "zoom" && event.t === 3300
+      ? { ...event, t: 5540 } : event.kind === "land" ? { ...event, t: 7190 } : event) } : carryCutLabTimeline} kind="carry-cut" concealProof={concealProof} concealDisabled={concealDisabled} />;

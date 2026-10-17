@@ -52,6 +52,11 @@ export function carryTiming(flight: CarryFlight) {
   return { glideStartMs, incomingMs, sceneEndMs, arrivalMs, revealEndMs: arrivalMs + t.dissolveMs };
 }
 
+/** Cut incoming camera is frozen at scene end; afterward use the live source clock. */
+export function carryTargetTimeMs(flight: CarryFlight, timeline: Timeline, timeMs: number) {
+  return createTimeMap(timeline).toTimelineTime(Math.max(carryTiming(flight).sceneEndMs, timeMs));
+}
+
 export function carryConcealOpacity(flight: CarryFlight, timeMs: number) {
   const timing = carryTiming(flight);
   if (flight.land.conceal === false || timeMs < timing.incomingMs) return 0;

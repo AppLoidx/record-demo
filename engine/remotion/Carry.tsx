@@ -1,4 +1,4 @@
-import { carryMotion, carryConcealOpacity, projectCarryRect, type CarryFlight } from "../lib/carry";
+import { carryMotion, carryConcealOpacity, carryTargetTimeMs, carryTiming, projectCarryRect, type CarryFlight } from "../lib/carry";
 import { textWidth } from "../lib/typography";
 import type { createSceneCameraPath } from "../lib/scene-camera";
 import type { Rect, Timeline } from "../lib/timeline";
@@ -21,8 +21,10 @@ export function Carry({ flight, timeline, cameraPath, fps, timeMs, width, height
 }) {
   const source = projectCarryRect(flight.carry.rect, timeline.viewport.deviceScaleFactor,
     cameraPath.atFrame(flight.sourceTimeMs * fps / 1000), screenOriginAt?.(flight.carry.t) ?? screenOrigin);
+  const targetTimeMs = carryTargetTimeMs(flight, timeline, timeMs);
+  const targetCamera = cameraPath.atFrame(targetTimeMs * fps / 1000);
   const target = projectCarryRect(flight.land.rect, timeline.viewport.deviceScaleFactor,
-    cameraPath.atFrame(flight.targetTimeMs * fps / 1000), screenOriginAt?.(flight.land.t) ?? screenOrigin);
+    targetCamera, screenOriginAt?.(Math.max(carryTiming(flight).sceneEndMs, timeMs)) ?? screenOrigin);
   const dock = carryDock(flight.carry.text, flight.transition.label, width, height);
   const motion = carryMotion(flight, timeMs, source, target, dock);
   if (motion.opacity <= 0) return null;
@@ -30,7 +32,7 @@ export function Carry({ flight, timeline, cameraPath, fps, timeMs, width, height
   const chipFontSize = Math.max(0, Math.min(t.fontSize * scale,
     motion.rect.height * 0.55, (motion.rect.width - t.padding * scale) / Math.max(1, textWidth(flight.carry.text, 1))));
   const native = flight.land.textStyle;
-  const targetScale = timeline.viewport.deviceScaleFactor * cameraPath.atFrame(flight.targetTimeMs * fps / 1000).scale;
+  const targetScale = timeline.viewport.deviceScaleFactor * targetCamera.scale;
   const fontSize = native ? chipFontSize + (native.fontSize * targetScale - chipFontSize) * motion.landing : chipFontSize;
   const material = flight.land.conceal !== false && motion.landing === 1
     ? "transparent" : flight.land.concealColor ?? demoTheme.colors.surface;

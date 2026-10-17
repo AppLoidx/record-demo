@@ -1,3 +1,4 @@
+import { snapshotLandScene, landSceneIsUnchanged, landBackground, type LandSceneSnapshot } from "./land-scene";
 import { measureLandText } from "./land-text";
 import { calloutSide } from "./callout";
 import { createSceneCameraPath } from "./scene-camera";
@@ -6,6 +7,7 @@ import {
   test,
   type BrowserContext,
   type Locator,
+  type JSHandle,
   type Page,
 } from "@playwright/test";
 import { constants } from "node:fs";
@@ -228,6 +230,7 @@ export class Storyboard {
   private started = false;
   private effect: "window" | "transition" | undefined;
   private windowCount = 0;
+  private landSceneSnapshot?: JSHandle<LandSceneSnapshot>;
 
   constructor(
     private readonly name: string,
@@ -330,6 +333,8 @@ export class Storyboard {
   }
 
   async carry(target: Locator, text: string) {
+    await this.landSceneSnapshot?.dispose();
+    this.landSceneSnapshot = undefined;
     const rect = await this.measureTarget(target, {
       padding: 0, scroll: "nearest", containment: "viewport",
       missingBoxMessage: "Cannot carry an element without a bounding box",
@@ -339,20 +344,33 @@ export class Storyboard {
   }
 
   async land(target: Locator, options: { text?: string; conceal?: boolean; concealColor?: string } = {}) {
-    const rect = await this.measureTarget(target, {
-      padding: 0, scroll: "nearest", containment: "viewport",
-      missingBoxMessage: "Cannot land on an element without a bounding box",
-    });
     const lastCarry = this.events.filter((event) => event.kind === "carry").at(-1);
     const carryIndex = lastCarry ? this.events.indexOf(lastCarry) : -1;
-    const scene = carryIndex < 0 ? undefined : this.events.slice(carryIndex + 1).find((event) => event.kind === "transition");
+    const pending = carryIndex >= 0 && !this.events.slice(carryIndex + 1).some((event) => event.kind === "land");
+    const scene = pending ? this.events.slice(carryIndex + 1).find((event) => event.kind === "transition") : undefined;
+    const movedMessage = "land target moved after the scene change; scroll inside the cut action";
+    const before = pending ? await target.boundingBox() : undefined;
+    if (pending && (!before || !isRectInsideViewport(before, this.viewport) ||
+      (typeof target.evaluate === "function" && !await target.evaluate(landSceneIsUnchanged, this.landSceneSnapshot)))) {
+      throw new Error(movedMessage);
+    }
+    const rect = await this.measureTarget(target, {
+      padding: 0, scroll: pending ? undefined : "nearest", containment: "viewport",
+      missingBoxMessage: "Cannot land on an element without a bounding box",
+    });
+    if (pending && (!rectsAreIdentical(before!, rect) ||
+      (typeof target.evaluate === "function" && !await target.evaluate(landSceneIsUnchanged, this.landSceneSnapshot)))) {
+      throw new Error(movedMessage);
+    }
     const text = (scene || options.text !== undefined) && typeof target.evaluate === "function"
       ? await target.evaluate(measureLandText, options.text) : undefined;
+    const concealColor = options.concealColor ?? (typeof target.evaluate === "function"
+      ? await target.evaluate(landBackground) : undefined) ?? demoTheme.colors.surface;
     this.events.push({ t: this.now(), kind: "land", rect: text?.rect ?? rect,
       ...(text ? { textStyle: text.textStyle, ...(text.lines ? { lines: text.lines, lineCount: text.lineCount } : {}) } : {}),
       ...(options.text === undefined ? {} : { text: options.text }),
       ...(options.conceal === undefined ? {} : { conceal: options.conceal }),
-      ...(options.concealColor === undefined ? {} : { concealColor: options.concealColor }) });
+      concealColor });
     await this.page.waitForTimeout(demoTheme.carry.landMs);
     return { rect: text?.rect ?? rect, lineCount: text?.lineCount ?? 1, lines: text?.lines };
   }
@@ -494,6 +512,13 @@ export class Storyboard {
       await action(this.page);
       const actionMs = this.now() - cardStartedAt;
       await this.page.waitForTimeout(Math.max(0, (isCut ? 0 : minCardMs) - actionMs));
+      const pendingCarry = [...this.events].reverse().find((candidate) => candidate.kind === "carry" || candidate.kind === "land");
+      const firstScene = pendingCarry?.kind === "carry"
+        ? this.events.slice(this.events.indexOf(pendingCarry) + 1).find((candidate) => candidate.kind === "transition") : undefined;
+      if (firstScene === event && typeof this.page.evaluateHandle === "function") {
+        await this.landSceneSnapshot?.dispose();
+        this.landSceneSnapshot = await this.page.evaluateHandle(snapshotLandScene);
+      }
       event.cardMs = this.now() - cardStartedAt;
       if (role !== undefined) {
         const roleEvent = {
@@ -517,6 +542,7 @@ export class Storyboard {
   }
 
   async close() {
+    await this.landSceneSnapshot?.dispose();
     await this.windowCapture.close();
   }
 

@@ -240,7 +240,9 @@ keep the clip legible:
   `await d.carry(...)`, `await d.cut(...)` (or a chapter `d.transition(...)`), and `await d.land(...)` in sequence.
   Cut and chapter carries glide continuously from lift end to the destination, arriving by the end of the incoming dissolve or within 250ms after it. Land on a text locator
   covering the carried words: the engine captures its text range and font metrics for the final aligned crossfade.
-  A `d.zoomTo(...)` before `land()` is supported; allow the camera to settle before landing.
+  For an already zoomed landing, issue `d.zoomTo(...)` inside the cut/transition action and
+  let it settle there; call `land()` immediately after the scene change. If a camera move
+  continues afterward, the chip follows the live camera during its reveal.
   Carry waits for its 300ms lift; land waits for its 600ms glide and dissolve. Elastic
   cards keep the chip visible while hidden load time is cut.
 
@@ -351,9 +353,9 @@ await d.carry(sourceText, "Describe the source of funds");
 await d.cut(async (page) => {
   await page.goto(customerUrl);
   await d.settle(page.getByText("Describe the source of funds", { exact: true }));
+  await d.zoomTo(destinationSection);
+  await d.hold(1800);
 });
-await d.zoomTo(destinationSection);
-await d.hold(1800);
 await d.land(destinationText);
 ```
 
@@ -373,10 +375,13 @@ renderer covers the destination from the first incoming frame until the chip arr
 the chip glyphs into the real text over 180ms while the cover fades away. The chip follows one continuous
 route from lift end; chapter cards no longer provide a resting dock.
 
-The cover defaults to the theme surface (white). Supply an opaque `concealColor` matching a colored
-destination surface, or `conceal: false` to opt out. Target the exact carried words on a settled page:
+The cover uses the target's first non-transparent computed background color, walking up its ancestors,
+and falls back to the theme surface (white). Supply an opaque `concealColor` to override it,
+or `conceal: false` to opt out. Target the exact carried words on a settled page:
 the land rectangle is used retrospectively from the incoming frame, so keep the destination geometry
 stable during that interval (perform navigation, scrolling and resets inside the scene-change action).
+With a pending carry, `land()` never scrolls. An offscreen or moved target raises
+"land target moved after the scene change; scroll inside the cut action".
 Camera transforms and the incoming screen dissolve apply to the cover automatically. To arrive already
 zoomed, issue the destination zoom inside the action and let it settle there before calling land.
 
@@ -387,7 +392,8 @@ When the message is a bare text node inside a status paragraph, select its text 
 const { lineCount } = await d.land(statusParagraph, { text: message });
 ```
 
-`text` selects the first exact occurrence across the locator's descendant text nodes using DOM Ranges.
+`text` selects the first occurrence with visible client geometry across the locator's descendant text
+nodes using DOM Ranges; matching collapses whitespace in both the request and DOM text.
 The returned `rect` is the union of the measured line boxes; `lines` and `lineCount` are also returned
 and recorded on the land event. Wrapped messages land as matching individual lines, with a cover per
 line, so the status prefix stays visible even when it lies inside the union rectangle. Empty, missing,

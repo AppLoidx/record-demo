@@ -1,6 +1,8 @@
 import type { Browser, Locator, Page } from "@playwright/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { carryFlights } from "../lib/carry";
+import { measureLandText } from "../lib/land-text";
+import { landBackground } from "../lib/land-scene";
 import { Storyboard } from "../lib/storyboard";
 import { WindowCapture, imageRect } from "../lib/window-capture";
 import type { TimelineEvent } from "../lib/timeline";
@@ -41,7 +43,7 @@ afterEach(() => vi.restoreAllMocks());
 describe("multi-actor storyboard", () => {
   it.each([true, false])("land pairs with the first transition after carry (cut first: %s)", async (cutFirst) => {
     const { d, events } = setup();
-    const evaluate = vi.fn(async () => ({ rect: { x: 710, y: 420, width: 350, height: 32 },
+    const evaluate = vi.fn(async (fn: Function) => fn === landBackground ? undefined : fn !== measureLandText ? true : ({ rect: { x: 710, y: 420, width: 350, height: 32 },
       textStyle: { fontSize: 28, fontFamily: "Geist Sans", fontWeight: "400", color: "black" } }));
     const target = { waitFor: vi.fn(async () => {}), scrollIntoViewIfNeeded: vi.fn(async () => {}),
       boundingBox: vi.fn(async () => ({ x: 700, y: 400, width: 400, height: 60 })), evaluate } as unknown as Locator;
@@ -49,7 +51,7 @@ describe("multi-actor storyboard", () => {
     if (cutFirst) { await d.cut(async () => {}); await d.transition("Next", async () => {}); }
     else { await d.transition("First", async () => {}); await d.cut(async () => {}); }
     await d.land(target);
-    expect(evaluate).toHaveBeenCalledOnce();
+    expect(evaluate.mock.calls.filter(([fn]) => fn === measureLandText)).toHaveLength(1);
     const landed = events.at(-1);
     expect(landed?.kind === "land" && !!landed.textStyle).toBe(true);
     const flight = carryFlights({ version: 1, name: "pair", viewport, capture: { fps: 30, syncFlashAt: 0 }, durationMs: 20000, events })[0]!;
@@ -59,18 +61,18 @@ describe("multi-actor storyboard", () => {
     const { d, events } = setup();
     const text = { rect: { x: 710, y: 420, width: 350, height: 32 },
       textStyle: { fontSize: 28, fontFamily: "Geist Sans", fontWeight: "400", color: "rgb(0, 0, 0)" } };
-    const evaluate = vi.fn(async () => text);
+    const evaluate = vi.fn(async (fn: Function) => fn === measureLandText ? text : fn === landBackground ? undefined : true);
     const target = { waitFor: vi.fn(async () => {}), scrollIntoViewIfNeeded: vi.fn(async () => {}),
       boundingBox: vi.fn(async () => ({ x: 700, y: 400, width: 400, height: 60 })), evaluate } as unknown as Locator;
     await d.carry(target, "Message");
     await d.transition("Chapter", async () => {});
     await d.land(target);
-    expect(evaluate).toHaveBeenCalledOnce();
+    expect(evaluate.mock.calls.filter(([fn]) => fn === measureLandText)).toHaveLength(1);
     expect(events.at(-1)).toMatchObject({ kind: "land", ...text });
     await d.carry(target, "Message");
     await d.cut(async () => {});
     await d.land(target, { conceal: false, concealColor: "#183A42" });
-    expect(evaluate).toHaveBeenCalledTimes(2);
+    expect(evaluate.mock.calls.filter(([fn]) => fn === measureLandText)).toHaveLength(2);
     expect(events.at(-1)).toMatchObject({ kind: "land", ...text, conceal: false, concealColor: "#183A42" });
   });
   it("records the rail sequence synchronously and copies author labels", () => {

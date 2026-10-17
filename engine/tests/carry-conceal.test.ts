@@ -5,6 +5,8 @@ import { carryFlights, carryMotion, carryTiming, carryConcealOpacity } from "../
 import { Carry, CarryConcealer } from "../remotion/Carry";
 import { demoVideoSchema } from "../remotion/schema";
 import { parseTimeline, serializeTimeline, type Timeline } from "../lib/timeline";
+import { createTimeMap } from "../lib/time-map";
+import { createSceneCameraPath } from "../lib/scene-camera";
 import { carryCutLabTimeline } from "../remotion/Labs";
 
 const source = { x: 100, y: 100, width: 400, height: 50 };
@@ -73,6 +75,30 @@ describe("carry destination concealment", () => {
     const flight = carryFlights(subject)[0]!;
     expect(carryTiming({ ...flight, land: { ...flight.land, t: 2690 } }).arrivalMs).toBe(2690);
     expect(carryTiming({ ...flight, land: { ...flight.land, t: 5000 } }).arrivalMs).toBe(2790);
+  });
+  it("stays aligned with the live concealer during a post-cut zoom before land", () => {
+    const timeline: Timeline = { ...subject, durationMs: 9000, events: [
+      ...subject.events.filter((e) => e.kind !== "land"),
+      { t: 5540, kind: "zoom", durationMs: 1650, rect: { x: 650, y: 500, width: 700, height: 400 } },
+      { t: 7190, kind: "land", rect: target, textStyle: { fontSize: 28, fontFamily: "Arial", fontWeight: "400", color: "black" } },
+    ] };
+    const flight = carryFlights(timeline)[0]!;
+    const map = createTimeMap(timeline);
+    const cameraPath = createSceneCameraPath(timeline, 60, 2560, 1440);
+    const arrival = carryTiming(flight).arrivalMs;
+    const future = cameraPath.atFrame(flight.targetTimeMs * 60 / 1000);
+    for (const timeMs of [arrival, arrival + 50, arrival + 100, arrival + 150]) {
+      const camera = cameraPath.atFrame(map.toTimelineTime(timeMs) * 60 / 1000);
+      const scale = timeline.viewport.deviceScaleFactor * camera.scale;
+      const html = renderToStaticMarkup(createElement(Carry, { flight, timeline, cameraPath, fps: 60,
+        timeMs, width: 2560, height: 1440, screenOrigin: { x: 0, y: 0 } }));
+      const value = (property: string) => Number(html.match(new RegExp(`${property}:([0-9.e+-]+)px`))![1]);
+      expect(value("left")).toBeCloseTo(camera.translateX + target.x * scale, 6);
+      expect(value("top")).toBeCloseTo(camera.translateY + target.y * scale, 6);
+      expect(value("width")).toBeCloseTo(target.width * scale, 6);
+      expect(value("font-size")).toBeCloseTo(28 * scale, 6);
+      expect(Math.abs(camera.translateX + target.x * scale - (future.translateX + target.x * timeline.viewport.deviceScaleFactor * future.scale))).toBeGreaterThan(50);
+    }
   });
   it("round trips conceal options in both timeline validators", () => {
     const timeline: Timeline = { ...subject, events: subject.events.map((event) => event.kind === "land"
