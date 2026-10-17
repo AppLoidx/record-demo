@@ -12,6 +12,11 @@ export type Timeline = {
   durationMs: number;
   events: Array<
     | { t: number; kind: "role"; label: string }
+    | { t: number; kind: "rail"; steps: string[]; active: number }
+    | { t: number; kind: "rail-back"; from: number; to: number }
+    | { t: number; kind: "rail-off" }
+    | { t: number; kind: "carry"; rect: Rect; text: string }
+    | { t: number; kind: "land"; rect: Rect }
     | {
         t: number;
         kind: "window";
@@ -57,6 +62,9 @@ export type TimelineEvent = Timeline["events"][number];
 export type WindowEvent = Extract<TimelineEvent, { kind: "window" }>;
 export type TransitionEvent = Extract<TimelineEvent, { kind: "transition" }>;
 export type RoleEvent = Extract<TimelineEvent, { kind: "role" }>;
+export type RailEvent = Extract<TimelineEvent, { kind: "rail" | "rail-back" | "rail-off" }>;
+export type CarryEvent = Extract<TimelineEvent, { kind: "carry" }>;
+export type LandEvent = Extract<TimelineEvent, { kind: "land" }>;
 
 export function windowTotalDuration(event: WindowEvent) {
   return event.enterMs + event.holdMs + event.exitMs;
@@ -113,6 +121,18 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
   }
 
   switch (value.kind) {
+    case "rail":
+      return Array.isArray(value.steps) && value.steps.length > 0 &&
+        value.steps.every((step) => typeof step === "string") &&
+        Number.isInteger(value.active) && (value.active as number) >= 0 && (value.active as number) < value.steps.length;
+    case "rail-back":
+      return [value.from, value.to].every((n) => Number.isInteger(n) && (n as number) >= 0);
+    case "rail-off":
+      return true;
+    case "carry":
+      return isSpotlightRect(value.rect) && typeof value.text === "string";
+    case "land":
+      return isSpotlightRect(value.rect);
     case "role":
       return typeof value.label === "string";
     case "window":

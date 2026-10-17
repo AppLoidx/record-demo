@@ -21,7 +21,6 @@ export function Callout({ event, timeMs, timeline, camera, width, height }: {
   const exit = ease(clamp((total - age) / t.exitMs));
   const ring = ease(clamp(age / t.ringMs));
   const highlightScale = t.highlightEnterScale + (1 - t.highlightEnterScale) * ease(clamp(age / t.highlightEnterMs));
-  const connector = ease(clamp((age - t.ringMs) / t.connectorMs));
   const labelAge = age - t.ringMs - t.connectorMs;
   const label = ease(clamp(labelAge / t.labelEnterMs));
   const words = p.lines.flatMap((line) => line.split(" "));
@@ -29,18 +28,13 @@ export function Callout({ event, timeMs, timeline, camera, width, height }: {
   let wordIndex = 0;
   return <div style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: exit }}>
     <div style={{ position: "absolute", left: ringRect.x, top: ringRect.y, width: ringRect.width, height: ringRect.height,
-      boxSizing: "border-box", border: `${t.ringWidth * frameScale}px solid color-mix(in srgb, ${demoTheme.colors.accentPrimary} ${t.ringOpacity * 100}%, transparent)`,
+      boxSizing: "border-box",
       backgroundColor: `color-mix(in srgb, ${demoTheme.colors.accentPrimary} ${t.fillOpacity * 100}%, transparent)`,
-      boxShadow: `0 0 0 ${t.ringGlow * frameScale}px color-mix(in srgb, ${demoTheme.colors.accentPrimary} ${t.ringGlowOpacity * 100}%, transparent), 0 ${t.ringShadowY * frameScale}px ${t.ringShadowBlur * frameScale}px color-mix(in srgb, ${demoTheme.colors.accentPrimary} ${t.ringShadowOpacity * 100}%, transparent)`,
       borderRadius: t.ringRadius * frameScale, opacity: ring, transform: `scale(${highlightScale})` }} />
-    <svg width={width} height={height} style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-      <path d={`M ${p.start.x} ${p.start.y} L ${p.end.x} ${p.end.y}`} fill="none" stroke={demoTheme.colors.contentSecondary}
-        strokeWidth={1} pathLength={1} strokeDasharray={1} strokeDashoffset={1 - connector} />
-    </svg>
     <div style={{ position: "absolute", left: p.x, top: p.y, width: p.width, height: p.height, boxSizing: "border-box",
-      padding: `${metrics.paddingY}px ${metrics.paddingX}px`, borderRadius: t.radius * frameScale, border: `1px solid ${demoTheme.colors.line}`,
-      backgroundColor: demoTheme.colors.surface, boxShadow: t.shadow, fontFamily: demoTheme.fontFamily, fontSize: metrics.fontSize,
-      lineHeight: t.lineHeight, fontWeight: 500, color: demoTheme.colors.contentPrimary, opacity: label,
+      padding: `${metrics.paddingY}px ${metrics.paddingX}px`, borderRadius: p.lines.length > 1 ? t.radius * frameScale : 999,
+      backgroundColor: demoTheme.colors.accentPrimary, boxShadow: t.shadow, fontFamily: demoTheme.fontFamily, fontSize: metrics.fontSize,
+      lineHeight: t.lineHeight, fontWeight: 500, color: demoTheme.colors.captionText, opacity: label,
       transform: `scale(${t.labelEnterScale + (1 - t.labelEnterScale) * label})`, overflow: "hidden" }}>
       {p.lines.map((line, lineIndex) => <div key={lineIndex} style={{ whiteSpace: "nowrap" }}>{line.split(" ").map((word, i) => {
         const timing = times[wordIndex++]!;

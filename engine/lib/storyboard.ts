@@ -310,6 +310,42 @@ export class Storyboard {
     });
   }
 
+  rail(steps: string[], active: number) {
+    if (!steps.length || !steps.every((step) => typeof step === "string") ||
+      !Number.isInteger(active) || active < 0 || active >= steps.length)
+      throw new Error("Invalid rail steps or active index");
+    this.events.push({ t: this.startedAt === 0 ? 0 : this.now(), kind: "rail", steps: [...steps], active });
+  }
+
+  railBack(from: number, to: number) {
+    const rail = this.events.filter((event) => event.kind === "rail").at(-1);
+    if (!rail || ![from, to].every((index) => Number.isInteger(index) && index >= 0 && index < rail.steps.length))
+      throw new Error("Invalid rail return indices");
+    this.events.push({ t: this.startedAt === 0 ? 0 : this.now(), kind: "rail-back", from, to });
+  }
+
+  railOff() {
+    this.events.push({ t: this.startedAt === 0 ? 0 : this.now(), kind: "rail-off" });
+  }
+
+  async carry(target: Locator, text: string) {
+    const rect = await this.measureTarget(target, {
+      padding: 0, scroll: "nearest", containment: "viewport",
+      missingBoxMessage: "Cannot carry an element without a bounding box",
+    });
+    this.events.push({ t: this.now(), kind: "carry", rect, text });
+    await this.page.waitForTimeout(demoTheme.carry.liftMs);
+  }
+
+  async land(target: Locator) {
+    const rect = await this.measureTarget(target, {
+      padding: 0, scroll: "nearest", containment: "viewport",
+      missingBoxMessage: "Cannot land on an element without a bounding box",
+    });
+    this.events.push({ t: this.now(), kind: "land", rect });
+    await this.page.waitForTimeout(demoTheme.carry.landMs);
+  }
+
   async window(
     source: WindowSource,
     options: {

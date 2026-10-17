@@ -38,6 +38,40 @@ function setup() {
 afterEach(() => vi.restoreAllMocks());
 
 describe("multi-actor storyboard", () => {
+  it("records the rail sequence synchronously and copies author labels", () => {
+    const { d, events, advance } = setup();
+    const steps = ["Bank", "Ops", "Customer"];
+    d.rail(steps, 0);
+    steps[0] = "Changed later";
+    advance(1000);
+    d.rail(["Bank", "Ops", "Customer"], 2);
+    d.railBack(2, 1);
+    d.railOff();
+    expect(events).toEqual([
+      { t: 0, kind: "rail", steps: ["Bank", "Ops", "Customer"], active: 0 },
+      { t: 1000, kind: "rail", steps: ["Bank", "Ops", "Customer"], active: 2 },
+      { t: 1000, kind: "rail-back", from: 2, to: 1 },
+      { t: 1000, kind: "rail-off" },
+    ]);
+    expect(() => d.rail([], 0)).toThrow(/rail/i);
+    expect(() => d.rail(["Bank"], 1)).toThrow(/rail/i);
+    expect(() => d.railBack(4, 0)).toThrow(/rail/i);
+  });
+  it("captures stable carry and land rects and waits for the lift and landing", async () => {
+    const { d, events, page } = setup();
+    const target = {
+      waitFor: vi.fn(async () => {}), scrollIntoViewIfNeeded: vi.fn(async () => {}),
+      boundingBox: vi.fn(async () => ({ x: 700, y: 400, width: 400, height: 60 })),
+    } as unknown as Locator;
+    await d.carry(target, "Describe the source of funds");
+    expect(events[0]).toEqual({ t: 150, kind: "carry", text: "Describe the source of funds",
+      rect: { x: 700, y: 400, width: 400, height: 60 } });
+    expect(page.waitForTimeout).toHaveBeenLastCalledWith(300);
+    await d.transition("Sent back", async () => {});
+    await d.land(target);
+    expect(events.at(-1)).toMatchObject({ t: 3110, kind: "land", rect: { x: 700, y: 400, width: 400, height: 60 } });
+    expect(page.waitForTimeout).toHaveBeenLastCalledWith(600);
+  });
   it("records window durations and keeps capture running for their full sum", async () => {
     const { d, page, capture, events } = setup();
     await d.window({ html: "<button>Open</button>" }, { title: "Email" });

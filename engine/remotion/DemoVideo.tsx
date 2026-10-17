@@ -26,6 +26,10 @@ import { WindowInset, windowMotion } from "./WindowInset";
 import { Transition, transitionMotion } from "./Transition";
 import { Callout } from "./Callout";
 import { RoleBadge } from "./RoleBadge";
+import { railScreenOffset, railState } from "../lib/rail";
+import { carryFlights } from "../lib/carry";
+import { Rail } from "./Rail";
+import { Carry } from "./Carry";
 import { Background } from "./Background";
 import { Caption } from "./Captions";
 import { Outro, outroScreenMotion, resolveOutro } from "./Outro";
@@ -150,6 +154,22 @@ export function buildStudioTracks(
   const outroEvent = timeline.events.find(
     (event): event is OutroEvent => event.kind === "outro",
   );
+  const railEvents = timeline.events.filter((event) =>
+    event.kind === "rail" || event.kind === "rail-back" || event.kind === "rail-off").sort((a, b) => a.t - b.t);
+  const rails = railEvents.map((event, index) => {
+    const start = timeMap.toCompositionTime(event.t);
+    const next = railEvents[index + 1];
+    const end = event.kind === "rail-off" ? start + demoTheme.rail.fadeMs
+      : next ? timeMap.toCompositionTime(next.t) + demoTheme.rail.fadeMs : durationInFrames * 1000 / fps;
+    const name = event.kind === "rail" ? `Rail: ${event.steps[event.active]}`
+      : event.kind === "rail-back" ? `Rail return: ${event.from} → ${event.to}` : "Rail off";
+    return { name, ...msToFrameWindow(start, Math.max(0, end - start), fps), event };
+  });
+  const carries = carryFlights(timeline).map((flight) => ({
+    name: `Carry: ${flight.carry.text}`,
+    ...msToFrameWindow(flight.carry.t, flight.land.t + demoTheme.carry.landMs - flight.carry.t, fps),
+    flight,
+  }));
 
   return {
     screen: { name: "Screen", from: 0, durationInFrames },
@@ -160,6 +180,8 @@ export function buildStudioTracks(
     windows,
     transitions,
     roles,
+    rails,
+    carries,
     outro: outroEvent
       ? (() => {
           // The slate must persist to the video's final frame even when the
@@ -317,7 +339,15 @@ export function DemoVideo(props: DemoVideoProps) {
   assertDemoVideoProps(props);
   const frame = useCurrentFrame();
   const { fps, width, height, durationInFrames } = useVideoConfig();
-  const layout = layoutFor(width, height, props.windowChrome);
+  const compositionTimeMs = (frame / fps) * 1_000;
+  const rail = railState(props.timeline, compositionTimeMs);
+  const baseLayout = layoutFor(width, height, props.windowChrome);
+  const screenShift = railScreenOffset(props.timeline, width, height, baseLayout.top, 1);
+  const layout = { ...baseLayout, top: baseLayout.top + screenShift * rail.opacity };
+  const screenOriginAt = (time: number) => ({
+    x: (width - baseLayout.screenWidth) / 2,
+    y: baseLayout.top + baseLayout.chromeHeight + screenShift * railState(props.timeline, time).opacity,
+  });
   const timeMap = useMemo(() => createTimeMap(props.timeline), [props.timeline]);
   const cameraPath = useMemo(
     () =>
@@ -336,7 +366,6 @@ export function DemoVideo(props: DemoVideoProps) {
     demoTheme.layout.minimumWindowRadius,
     layout.screenWidth * demoTheme.layout.windowRadiusRatio,
   );
-  const compositionTimeMs = (frame / fps) * 1_000;
   const sourceTimeMs = timeMap.cuts.length === 0
     ? compositionTimeMs
     : timeMap.toTimelineTime(compositionTimeMs);
@@ -471,7 +500,7 @@ export function DemoVideo(props: DemoVideoProps) {
           <Transition event={track.event} timeMs={compositionTimeMs} frameWidth={width} />
         </Sequence>
       ))}
-      <RoleBadge
+      <div style={{ opacity: 1 - rail.opacity }}><RoleBadge
         timeline={props.timeline}
         timeMs={sourceTimeMs}
         outroProgress={outro.progress}
@@ -479,7 +508,21 @@ export function DemoVideo(props: DemoVideoProps) {
         frameHeight={height}
         screenWidth={layout.screenWidth}
         screenTop={layout.top}
-      />
+      /></div>
+      <Rail state={rail} width={width} height={height} outroProgress={outro.progress} screenShift={screenShift} />
+      {tracks.rails.map((track, index) => (
+        <Sequence key={`rail-${index}`} name={track.name} from={track.from}
+          durationInFrames={track.durationInFrames} layout="none">{null}</Sequence>
+      ))}
+      {tracks.carries.map((track, index) => (
+        <Sequence key={`carry-${index}`} name={track.name} from={track.from}
+          durationInFrames={track.durationInFrames} layout="none">
+          <Carry flight={track.flight} timeline={props.timeline} cameraPath={cameraPath} fps={fps}
+            timeMs={compositionTimeMs} width={width} height={height} outroProgress={outro.progress}
+            screenOriginAt={screenOriginAt}
+            screenOrigin={{ x: (width - layout.screenWidth) / 2, y: layout.top + layout.chromeHeight }} />
+        </Sequence>
+      ))}
       {tracks.roles.map((track) => (
         <Sequence
           key={`role-${track.event.t}`}

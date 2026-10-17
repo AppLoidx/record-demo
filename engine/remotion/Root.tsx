@@ -13,6 +13,7 @@ import {
 } from "./DemoVideo";
 import { demoVideoSchema } from "./schema";
 import { compositionFps, compositionPresets } from "./theme";
+import { RailLab, CarryLab, CalloutLab, railLabTimeline, carryLabTimeline, calloutLabTimeline } from "./Labs";
 
 const timelineValue: unknown = fixtureTimeline;
 assertTimeline(timelineValue);
@@ -40,6 +41,14 @@ export const calculateMetadata: CalculateMetadataFunction<DemoVideoProps> = ({
 export function RemotionRoot() {
   return (
     <>
+      {[
+        { id: "RailLab", component: RailLab, timeline: railLabTimeline },
+        { id: "CarryLab", component: CarryLab, timeline: carryLabTimeline },
+        { id: "CalloutLab", component: CalloutLab, timeline: calloutLabTimeline },
+      ].flatMap((lab) => compositionPresets.map((preset) => <Composition key={`${lab.id}-${preset.id}`}
+        id={preset.id === "16x9" ? lab.id : `${lab.id}-${preset.id}`} component={lab.component}
+        width={preset.width} height={preset.height} fps={compositionFps}
+        durationInFrames={compositionDurationInFrames(lab.timeline, compositionFps)} />))}
       {compositionPresets.map((composition) => (
         <Composition
           key={composition.id}

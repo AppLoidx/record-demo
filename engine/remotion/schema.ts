@@ -14,6 +14,11 @@ const spotlightRectSchema = rectSchema.extend({
 });
 
 const timelineEventSchema = z.discriminatedUnion("kind", [
+  z.object({ t: z.number(), kind: z.literal("rail"), steps: z.array(z.string()).min(1), active: z.number().int().nonnegative() }),
+  z.object({ t: z.number(), kind: z.literal("rail-back"), from: z.number().int().nonnegative(), to: z.number().int().nonnegative() }),
+  z.object({ t: z.number(), kind: z.literal("rail-off") }),
+  z.object({ t: z.number(), kind: z.literal("carry"), rect: spotlightRectSchema, text: z.string() }),
+  z.object({ t: z.number(), kind: z.literal("land"), rect: spotlightRectSchema }),
   z.object({ t: z.number(), kind: z.literal("callout"), rect: spotlightRectSchema,
     text: z.string(), holdMs: z.number().nonnegative(), side: z.enum(["left", "right", "top", "bottom"]) }),
   z.object({ t: z.number(), kind: z.literal("role"), label: z.string() }),

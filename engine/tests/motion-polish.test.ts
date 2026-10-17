@@ -107,12 +107,13 @@ describe("callout integration", () => {
     const settled = render(1500);
     expect(settled).toContain("left:86px;top:86px;width:268px;height:88px");
     expect(settled).toContain("background-color:color-mix(in srgb, #252525 8%, transparent)");
-    expect(settled).toContain("border:1.5px solid color-mix(in srgb, #252525 35%, transparent)");
+    expect(settled).not.toContain("solid color-mix");
+    expect(settled).not.toContain("<svg");
     expect(settled).toContain("border-radius:12px;opacity:1;transform:scale(1)");
-    expect(settled).toContain("0 0 0 4px color-mix(in srgb, #252525 10%, transparent), 0 8px 24px color-mix(in srgb, #252525 12%, transparent)");
+    expect(settled).not.toContain("0 0 0 4px");
     for (const time of [700, 1500]) {
       const html = render(time);
-      expect(html).toContain("background-color:#FFFFFF");
+      expect(html).toContain("background-color:#252525");
       expect(html).toContain("padding:14px 22px");
       expect(html).toContain("box-shadow:0 8px 24px rgba(33, 27, 51, 0.12)");
     }
@@ -144,7 +145,7 @@ describe("callout integration", () => {
     const rect = { x: width / 3, y: height / 2, width: 200 * scale, height: 60 * scale };
     const p = calloutPlacement(rect, "Ready for review", "right", width, height);
     expect(p.start.x).toBeCloseTo(rect.x + rect.width + 14 * scale);
-    expect(p.x - p.start.x).toBeCloseTo(72 * scale);
+    expect(p.x - p.start.x).toBeCloseTo(24 * scale);
     expect(p.height).toBeCloseTo((22 * 1.7 * 1.3 + 28) * scale);
     const wrapped = calloutPlacement(rect, "A longer explanation that must wrap across several readable lines", "right", width, height);
     expect(wrapped.lines.length).toBeGreaterThan(1);

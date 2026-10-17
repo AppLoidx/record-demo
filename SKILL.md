@@ -221,7 +221,7 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
 
 ## Multi-actor stories: windows, transitions, roles
 
-For flows that cross people or apps (customer app -> email -> ops tool), three effects
+For flows that cross people or apps (customer app -> email -> ops tool), these effects
 keep the clip legible:
 
 | Effect | Storyboard | Use for |
@@ -229,6 +229,16 @@ keep the clip legible:
 | Second window | `await d.window({ html } \| { url }, { title, holdMs, highlight, click })` | An email, notification or second app rising over the screen; `highlight` + `click` sends a cursor to that element |
 | Scene transition | `await d.transition(label, async (page) => { ...switch... }, { role })` | Masking a switch between apps or a slow page load; the action runs while the label card shows |
 | Role badge | `d.role("Customer")`, or `role` on a transition | Naming whose perspective is on screen |
+| Loop rail | `d.rail(["Bank", "Ops", "Customer", "Ops", "Bank"], 0)` | A persistent actor path; repeat with the next active index to advance |
+| Return arc | `d.railBack(3, 2)`, `d.railOff()` | Showing a loop back, then hiding the rail when the story ends |
+| Message carry | `await d.carry(source, "Please revise this answer")`; transition; `await d.land(destination)` | Carrying the same words across a chapter card into the next app |
+
+- The rail replaces the role badge while visible and stays above chapter cards. Indices
+  start at 0; allow 520ms for an advance, or 1720ms for a return arc, landing and fade.
+- Carry/land locators should frame the message text. Settle the camera first, then
+  `await d.carry(...)`, `await d.transition(...)`, and `await d.land(...)` in sequence.
+  Carry waits for its 300ms lift; land waits for its 600ms glide and dissolve. Elastic
+  cards keep the chip visible while hidden load time is cut.
 
 - Window content must be the real artifact: render the product's own template (for example
   the real email renderer with demo inputs). Never hand-write a look-alike.
