@@ -11,18 +11,35 @@ const inEase = Easing.bezier(...tokens.inEasing);
 const typeEase = Easing.bezier(...demoTheme.typography.easing);
 const phase = (age: number, duration: number) => duration === 0 ? (age >= 0 ? 1 : 0) : clamp(age / duration);
 
+/** Fade outgoing annotations on presentation time, independently of hidden action time. */
+export function annotationHandoffOpacity(event: TransitionEvent, timeMs: number) {
+  const duration = Math.min(tokens.annotationFadeMs, event.style === "cut" ? event.inMs : event.outMs);
+  return 1 - inEase(phase(timeMs - event.t, duration));
+}
+
 export function transitionMotion(event: TransitionEvent | undefined, timeMs: number) {
+  if (event?.style === "cut") {
+    const elapsed = timeMs - event.t;
+    const progress = inEase(phase(elapsed, event.inMs));
+    return { active: elapsed >= 0 && elapsed < event.inMs,
+      outgoing: { scale: 1 + (demoTheme.cut.outScale - 1) * progress,
+        opacity: 1, translateX: 0, blur: demoTheme.cut.blurPx * progress },
+      incoming: { scale: demoTheme.cut.inScale + (1 - demoTheme.cut.inScale) * progress,
+        opacity: progress, translateX: 0, blur: 0 } };
+  }
   const elapsed = event ? timeMs - event.t : -1;
   const out = event ? outEase(phase(elapsed, event.outMs)) : 0;
   const incoming = event ? inEase(phase(elapsed - event.outMs - event.cardMs, event.inMs)) : 0;
   return {
     active: !!event && elapsed >= 0 && elapsed < transitionTotalDuration(event),
     outgoing: {
+      blur: 0,
       scale: 1 - (1 - tokens.outScale) * out,
       opacity: (tokens.contextOpacity + (1 - tokens.contextOpacity) * (1 - out)) * (1 - incoming),
       translateX: -tokens.outTranslateRatio * out,
     },
     incoming: {
+      blur: 0,
       scale: tokens.inScale + (1 - tokens.inScale) * incoming,
       opacity: incoming,
       translateX: tokens.translateRatio * (1 - incoming),
@@ -47,6 +64,7 @@ export function chapterProgress(event: TransitionEvent, cardAge: number) {
 export function Transition({ event, timeMs, frameWidth }: {
   event: TransitionEvent; timeMs: number; frameWidth: number;
 }) {
+  if (event.style === "cut") return null;
   const age = timeMs - event.t - event.outMs;
   if (age < 0 || age >= event.cardMs) return null;
   const exitMs = Math.min(tokens.cardExitMs, event.cardMs);

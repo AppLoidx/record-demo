@@ -342,7 +342,22 @@ export class Storyboard {
       padding: 0, scroll: "nearest", containment: "viewport",
       missingBoxMessage: "Cannot land on an element without a bounding box",
     });
-    this.events.push({ t: this.now(), kind: "land", rect });
+    const lastCarry = this.events.filter((event) => event.kind === "carry").at(-1);
+    const carryIndex = lastCarry ? this.events.indexOf(lastCarry) : -1;
+    const scene = carryIndex < 0 ? undefined : this.events.slice(carryIndex + 1).find((event) => event.kind === "transition");
+    const text = scene?.style === "cut" && typeof target.evaluate === "function" ? await target.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const box = range.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 ? {
+        rect: { x: box.x, y: box.y, width: box.width, height: box.height },
+        textStyle: { fontSize: parseFloat(style.fontSize), fontFamily: style.fontFamily,
+          fontWeight: style.fontWeight, color: style.color },
+      } : undefined;
+    }) : undefined;
+    this.events.push({ t: this.now(), kind: "land", rect: text?.rect ?? rect,
+      ...(text ? { textStyle: text.textStyle } : {}) });
     await this.page.waitForTimeout(demoTheme.carry.landMs);
   }
 
@@ -401,10 +416,19 @@ export class Storyboard {
     }
   }
 
+  /** Card-less scene change; action time is entirely removed at render time. */
+  async cut(action: StoryboardAction, options: { visibleMs?: number } = {}) {
+    const visibleMs = options.visibleMs ?? demoTheme.cut.visibleMs;
+    if (!Number.isFinite(visibleMs) || visibleMs <= 0) throw new Error("Invalid cut visibleMs");
+    await this.transition("", action, { style: "cut", visibleMs });
+  }
+
   async transition(
     label: string,
     action: StoryboardAction,
     options: {
+      style?: "cut";
+      visibleMs?: number;
       role?: string;
       minCardMs?: number;
       visibleCardMs?: number;
@@ -430,7 +454,10 @@ export class Storyboard {
         throw new Error("Invalid transition visibleCardMs");
       await this.ensureStarted();
       const t = this.now();
-      const { outMs, inMs } = demoTheme.transition;
+      const isCut = options.style === "cut";
+      const outMs = isCut ? 0 : demoTheme.transition.outMs;
+      const inMs = isCut ? options.visibleMs ?? demoTheme.cut.visibleMs : demoTheme.transition.inMs;
+      if (!Number.isFinite(inMs) || inMs <= 0) throw new Error("Invalid cut visibleMs");
       const lastZoom = this.events
         .filter((event) => event.kind === "zoom")
         .at(-1);
@@ -456,6 +483,7 @@ export class Storyboard {
         t,
         kind: "transition" as const,
         label,
+        ...(isCut ? { style: "cut" as const } : {}),
         ...(role === undefined ? {} : { role }),
         ...(chapter === undefined ? {} : { chapter }),
         outMs,
@@ -466,10 +494,10 @@ export class Storyboard {
       this.events.push(event);
       transitionEvents.push(event);
       await this.page.waitForTimeout(outMs);
-      const cardStartedAt = this.now();
+      const cardStartedAt = isCut ? t : this.now();
       await action(this.page);
       const actionMs = this.now() - cardStartedAt;
-      await this.page.waitForTimeout(Math.max(0, minCardMs - actionMs));
+      await this.page.waitForTimeout(Math.max(0, (isCut ? 0 : minCardMs) - actionMs));
       event.cardMs = this.now() - cardStartedAt;
       if (role !== undefined) {
         const roleEvent = {

@@ -198,7 +198,9 @@ export const demoTheme = {
     margin: 20,
     shadow: "0 8px 24px rgba(33, 27, 51, 0.12)",
   },
+  cut: { visibleMs: 540, outScale: 0.985, inScale: 1.015, blurPx: 5 },
   transition: {
+    annotationFadeMs: 180,
     outMs: 450,
     minCardMs: 1500,
     visibleCardMs: 1200,
@@ -262,6 +264,8 @@ export const demoTheme = {
     trackY: 59,
     dotSize: 5,
     arcDepth: 24,
+    arcStroke: 3,
+    arcDotRadius: 3.5,
     fillOpacity: 0.08,
   },
   carry: {

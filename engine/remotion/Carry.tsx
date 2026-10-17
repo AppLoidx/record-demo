@@ -27,12 +27,15 @@ export function Carry({ flight, timeline, cameraPath, fps, timeMs, width, height
   const motion = carryMotion(flight, timeMs, source, target, dock);
   if (motion.opacity <= 0) return null;
   const scale = Math.min(width, height) / 1440;
-  const fontSize = Math.max(0, Math.min(t.fontSize * scale,
+  const chipFontSize = Math.max(0, Math.min(t.fontSize * scale,
     motion.rect.height * 0.55, (motion.rect.width - t.padding * scale) / Math.max(1, textWidth(flight.carry.text, 1))));
+  const native = flight.transition.style === "cut" ? flight.land.textStyle : undefined;
+  const targetScale = timeline.viewport.deviceScaleFactor * cameraPath.atFrame(flight.targetTimeMs * fps / 1000).scale;
+  const fontSize = native ? chipFontSize + (native.fontSize * targetScale - chipFontSize) * motion.landing : chipFontSize;
   return <div style={{ position: "absolute", left: motion.rect.x, top: motion.rect.y,
     width: motion.rect.width, height: motion.rect.height, transform: `scale(${motion.scale})`,
     opacity: motion.opacity * (1 - outroProgress), borderRadius: t.radius * scale, background: demoTheme.colors.surface,
-    boxShadow: demoTheme.callout.shadow, color: demoTheme.colors.contentPrimary, fontFamily: demoTheme.fontFamily,
-    fontSize, fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center",
+    boxShadow: native ? `0 8px 24px rgba(33, 27, 51, ${0.12 * (1 - motion.landing)})` : demoTheme.callout.shadow, color: native?.color ?? demoTheme.colors.contentPrimary, fontFamily: native?.fontFamily ?? demoTheme.fontFamily,
+    fontSize, lineHeight: native ? `${motion.rect.height}px` : undefined, fontWeight: native?.fontWeight ?? 500, display: "flex", alignItems: "center", justifyContent: "center",
     whiteSpace: "nowrap", pointerEvents: "none" }}>{flight.carry.text}</div>;
 }

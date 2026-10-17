@@ -38,6 +38,38 @@ function setup() {
 afterEach(() => vi.restoreAllMocks());
 
 describe("multi-actor storyboard", () => {
+  it.each([true, false])("land pairs with the first transition after carry (cut first: %s)", async (cutFirst) => {
+    const { d, events } = setup();
+    const evaluate = vi.fn(async () => ({ rect: { x: 710, y: 420, width: 350, height: 32 },
+      textStyle: { fontSize: 28, fontFamily: "Geist Sans", fontWeight: "400", color: "black" } }));
+    const target = { waitFor: vi.fn(async () => {}), scrollIntoViewIfNeeded: vi.fn(async () => {}),
+      boundingBox: vi.fn(async () => ({ x: 700, y: 400, width: 400, height: 60 })), evaluate } as unknown as Locator;
+    await d.carry(target, "Message");
+    if (cutFirst) { await d.cut(async () => {}); await d.transition("Next", async () => {}); }
+    else { await d.transition("First", async () => {}); await d.cut(async () => {}); }
+    await d.land(target);
+    expect(evaluate).toHaveBeenCalledTimes(cutFirst ? 1 : 0);
+    const landed = events.at(-1);
+    expect(landed?.kind === "land" && !!landed.textStyle).toBe(cutFirst);
+  });
+  it("captures native text geometry only for cut landings, preserving chapter carries", async () => {
+    const { d, events } = setup();
+    const text = { rect: { x: 710, y: 420, width: 350, height: 32 },
+      textStyle: { fontSize: 28, fontFamily: "Geist Sans", fontWeight: "400", color: "rgb(0, 0, 0)" } };
+    const evaluate = vi.fn(async () => text);
+    const target = { waitFor: vi.fn(async () => {}), scrollIntoViewIfNeeded: vi.fn(async () => {}),
+      boundingBox: vi.fn(async () => ({ x: 700, y: 400, width: 400, height: 60 })), evaluate } as unknown as Locator;
+    await d.carry(target, "Message");
+    await d.transition("Chapter", async () => {});
+    await d.land(target);
+    expect(evaluate).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ kind: "land", rect: { x: 700, y: 400, width: 400, height: 60 } });
+    await d.carry(target, "Message");
+    await d.cut(async () => {});
+    await d.land(target);
+    expect(evaluate).toHaveBeenCalledOnce();
+    expect(events.at(-1)).toMatchObject({ kind: "land", ...text });
+  });
   it("records the rail sequence synchronously and copies author labels", () => {
     const { d, events, advance } = setup();
     const steps = ["Bank", "Ops", "Customer"];

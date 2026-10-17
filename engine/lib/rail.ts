@@ -48,18 +48,22 @@ export function railState(timeline: Timeline, timeMs: number): RailState {
       };
     } else {
       // A hand-edited event without a matching rail is simply invisible.
+      const following = timeline.events.filter((candidate) => candidate.kind === "transition" && map.toCompositionTime(candidate.t) >= event.t)
+        .sort((a, b) => a.t - b.t)[0];
+      const finish = following?.kind === "transition" ? map.toCompositionTime(following.t + following.outMs + following.cardMs + following.inMs) : Infinity;
+      const returnMs = Math.min(t.returnMs, Math.max(1, finish - event.t));
       const previousSample = sample;
       sample = (time) => previousSample(time).map((layer) => {
         if (event.from >= layer.steps.length || event.to >= layer.steps.length) return layer;
         const age = time - event.t;
         const initial = before.find((candidate) => candidate.steps === layer.steps) ?? layer;
         return { ...layer,
-          active: layer.active + (event.to - layer.active) * progress(age - t.returnMs, t.advanceMs),
+          active: layer.active + (event.to - layer.active) * progress(age - returnMs, t.advanceMs),
           trails: [...(initial.trails ?? []), ...(initial.arc ? [initial.arc] : [])]
             .map((arc) => ({ ...arc, opacity: arc.opacity * (1 - progress(age, t.fadeMs)) })),
-          arc: { from: event.from, to: event.to, draw: progress(age, t.returnMs),
+          arc: { from: event.from, to: event.to, draw: progress(age, returnMs),
             opacity: progress(age, t.arcEnterMs) *
-              (1 - progress(age - t.returnMs - t.advanceMs, t.arcFadeMs)) } };
+              (1 - progress(age - returnMs - t.advanceMs, t.arcFadeMs)) } };
       });
     }
   }

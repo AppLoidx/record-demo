@@ -4,14 +4,16 @@ import { createSceneCameraPath } from "../lib/scene-camera";
 import { carryFlights } from "../lib/carry";
 import { railScreenOffset, railState } from "../lib/rail";
 import { clamp } from "../lib/typography";
-import { createTimeMap } from "../lib/time-map";
+import { createTimeMap, transitionVisibleCardMs } from "../lib/time-map";
 import { type Timeline, type Rect } from "../lib/timeline";
 import { Background } from "./Background";
 import { Rail } from "./Rail";
+import { Cursor } from "./Cursor";
 import { Carry } from "./Carry";
 import { Callout } from "./Callout";
-import { Transition, transitionMotion } from "./Transition";
-import { layoutFor } from "./DemoVideo";
+import { Transition, transitionMotion, annotationHandoffOpacity } from "./Transition";
+import { SpotlightTrack } from "./Spotlight";
+import { layoutFor, annotationEndMs } from "./DemoVideo";
 import { demoTheme } from "./theme";
 
 export const labSteps = ["Bank asks", "Ops raises", "Customer answers", "Ops reviews", "Bank"];
@@ -52,7 +54,31 @@ export const calloutLabTimeline: Timeline = {
   ],
 };
 
-function Lab({ timeline, kind }: { timeline: Timeline; kind: "rail" | "carry" | "callout" }) {
+export const cutLabTimeline: Timeline = {
+  ...railLabTimeline, name: "cut-lab", durationMs: 7800,
+  events: [
+    { t: 0, kind: "rail", steps: labSteps, active: 3 },
+    { t: 0, kind: "cursor", x: 1100, y: 750 },
+    { t: 4950, kind: "cursor", x: 1000, y: 600 },
+    { t: 500, kind: "callout", rect: source, text: "Review this message", side: "bottom", holdMs: 10000 },
+    { t: 900, kind: "spotlight", rect: source, durationMs: 450, holdMs: 10000 },
+    { t: 1900, kind: "rail-back", from: 3, to: 2 },
+    { t: 2000, kind: "transition", style: "cut", label: "", outMs: 0, cardMs: 3000, inMs: 540 },
+  ],
+};
+export const carryCutLabTimeline: Timeline = {
+  ...cutLabTimeline, name: "carry-cut-lab", durationMs: 10000,
+  events: [
+    { t: 0, kind: "rail", steps: labSteps, active: 2 },
+    { t: 0, kind: "zoom", durationMs: 1650, rect: { x: 500, y: 280, width: 920, height: 520 } },
+    { t: 1700, kind: "carry", rect: source, text: "Describe the source of funds" },
+    { t: 2000, kind: "transition", style: "cut", label: "", outMs: 0, cardMs: 3000, inMs: 540 },
+    { t: 5540, kind: "zoom", durationMs: 1650, rect: { x: 500, y: 480, width: 920, height: 520 } },
+    { t: 7600, kind: "land", rect: target, textStyle: { fontSize: 28, fontFamily: "Geist Sans", fontWeight: "400", color: demoTheme.colors.contentPrimary } },
+  ],
+};
+
+function Lab({ timeline, kind }: { timeline: Timeline; kind: "rail" | "carry" | "callout" | "cut" | "carry-cut" }) {
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
   const time = frame * 1000 / fps;
@@ -68,20 +94,23 @@ function Lab({ timeline, kind }: { timeline: Timeline; kind: "rail" | "carry" | 
   const camera = cameraPath.atFrame(sourceTime * fps / 1000);
   const transition = timeline.events.find((e) => e.kind === "transition");
   const projected = transition?.kind === "transition" ? { ...transition, t: map.toCompositionTime(transition.t),
-    cardMs: Math.min(transition.cardMs, transition.visibleCardMs ?? demoTheme.transition.visibleCardMs) } : undefined;
+    cardMs: transitionVisibleCardMs(transition) } : undefined;
   const movement = transitionMotion(projected, time);
   const origin = { x: (width - layout.screenWidth) / 2, y: layout.top + layout.chromeHeight };
   const incoming = !!transition && sourceTime >= transition.t + transition.outMs;
   const dsf = timeline.viewport.deviceScaleFactor;
   const screen = (incoming: boolean, camera: CameraTransform, opacity: number,
-    motion = { translateX: 0, scale: 1 }) => {
+    motion = { translateX: 0, scale: 1, blur: 0 }) => {
+    const annotationTime = movement.active && !incoming && transition ? transition.t - 1000 / fps : sourceTime;
+    const annotationOpacity = movement.active && projected ? incoming ? 0 : annotationHandoffOpacity(projected, time) : 1;
     // The target is measured after a smooth scroll in land(); its earlier position differs.
-    const scroll = Easing.bezier(...demoTheme.zoom.easing)(clamp((sourceTime - 7510) / 300));
-    const rect = kind === "carry" && incoming ? { ...target, y: target.y + 180 * (1 - scroll) } : source;
+    const scroll = kind === "carry-cut" ? 1 : Easing.bezier(...demoTheme.zoom.easing)(clamp((sourceTime - 7510) / 300));
+    const rect = (kind === "carry" || kind === "carry-cut") && incoming ? { ...target, y: target.y + 180 * (1 - scroll) } : source;
     return (
     <div style={{ position: "absolute", left: origin.x, top: layout.top, width: layout.screenWidth,
       height: layout.screenHeight + layout.chromeHeight, borderRadius: 24, overflow: "hidden",
-      background: demoTheme.colors.surface, boxShadow: demoTheme.screen.shadow,
+      background: demoTheme.colors.surface, boxShadow: transition?.style === "cut" ? undefined : demoTheme.screen.shadow,
+      filter: `blur(${motion.blur}px)`,
       opacity, transform: `translateX(${motion.translateX * width}px) scale(${motion.scale})` }}>
       <div style={{ height: layout.chromeHeight, background: demoTheme.colors.surfaceMuted }} />
       <div style={{ position: "relative", height: layout.screenHeight, overflow: "hidden" }}>
@@ -90,12 +119,20 @@ function Lab({ timeline, kind }: { timeline: Timeline; kind: "rail" | "carry" | 
           <div style={{ position: "absolute", left: 120 * dsf, top: 80 * dsf, fontSize: 28 * dsf, fontWeight: 500 }}>SwipeLux · {incoming ? "Customer form" : "Ops review"}</div>
           <div style={{ position: "absolute", left: rect.x * dsf, top: (rect.y - 100) * dsf, fontSize: 32 * dsf, fontWeight: 500 }}>{incoming ? "Needs changes" : "Reason shown to the customer"}</div>
           <div style={{ position: "absolute", left: rect.x * dsf, top: rect.y * dsf, width: rect.width * dsf, height: rect.height * dsf,
-            background: incoming ? demoTheme.colors.backdrop : demoTheme.colors.surfaceMuted, borderRadius: 12 * dsf, fontSize: 28 * dsf, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            background: incoming ? demoTheme.colors.backdrop : demoTheme.colors.surfaceMuted, borderRadius: 12 * dsf, fontSize: 28 * dsf, lineHeight: "1", display: "flex", alignItems: "center", justifyContent: "center" }}>
             Describe the source of funds
           </div>
+          {annotationOpacity > 0 ? <div style={{ opacity: annotationOpacity }}>
+            {timeline.events.map((event, index) => event.kind === "spotlight" && annotationTime < annotationEndMs(timeline, event) ?
+              <SpotlightTrack key={index} timeline={timeline} spotlight={event} timeMs={annotationTime} /> : null)}
+          </div> : null}
         </div>
-        {kind === "callout" && timeline.events.map((event, index) => event.kind === "callout" ?
-          <Callout key={index} event={event} timeline={timeline} camera={camera} timeMs={sourceTime} width={layout.screenWidth} height={layout.screenHeight} /> : null)}
+        {kind === "cut" ? <Cursor timeline={timeline} camera={camera}
+          timeMs={movement.active && transition ? incoming ? transition.t + transition.cardMs : transition.t - 1000 / fps : sourceTime} /> : null}
+        {annotationOpacity > 0 ? <div style={{ opacity: annotationOpacity }}>
+          {timeline.events.map((event, index) => event.kind === "callout" && annotationTime < annotationEndMs(timeline, event) ?
+            <Callout key={index} event={event} timeline={timeline} camera={camera} timeMs={annotationTime} width={layout.screenWidth} height={layout.screenHeight} /> : null)}
+        </div> : null}
       </div>
     </div>
     );
@@ -105,16 +142,22 @@ function Lab({ timeline, kind }: { timeline: Timeline; kind: "rail" | "carry" | 
   return <AbsoluteFill style={{ fontFamily: demoTheme.fontFamily, color: demoTheme.colors.contentPrimary }}>
     <style>{`@font-face { font-family: 'Geist Sans'; src: url('${staticFile("fonts/geist-sans-latin-500-v5.2.5.woff2")}'); font-weight: 500; }`}</style>
     <Background />
+    {transition?.style === "cut" ? <div style={{ position: "absolute", left: origin.x, top: layout.top,
+      width: layout.screenWidth, height: layout.screenHeight + layout.chromeHeight,
+      borderRadius: 24, boxShadow: demoTheme.screen.shadow }} /> : null}
     {movement.active ? <>
       {screen(false, outgoingCamera, movement.outgoing.opacity, movement.outgoing)}
       {screen(true, camera, movement.incoming.opacity, movement.incoming)}
     </> : screen(incoming, camera, 1)}
     {projected ? <Transition event={projected} timeMs={time} frameWidth={width} /> : null}
-    {kind === "rail" ? <Rail state={rail} width={width} height={height} screenShift={screenShift} /> : null}
-    {kind === "carry" ? carryFlights(timeline).map((flight, index) => <Carry key={index} flight={flight} timeline={timeline}
+    {(kind === "rail" || kind === "cut" || kind === "carry-cut") ? <Rail state={rail} width={width} height={height} screenShift={screenShift} /> : null}
+    {(kind === "carry" || kind === "carry-cut") ? carryFlights(timeline).map((flight, index) => <Carry key={index} flight={flight} timeline={timeline}
       cameraPath={cameraPath} fps={fps} timeMs={time} width={width} height={height} screenOrigin={origin} screenOriginAt={screenOriginAt} />) : null}
   </AbsoluteFill>;
 }
 export const RailLab = () => <Lab timeline={railLabTimeline} kind="rail" />;
 export const CarryLab = () => <Lab timeline={carryLabTimeline} kind="carry" />;
 export const CalloutLab = () => <Lab timeline={calloutLabTimeline} kind="callout" />;
+
+export const CutLab = () => <Lab timeline={cutLabTimeline} kind="cut" />;
+export const CarryCutLab = () => <Lab timeline={carryCutLabTimeline} kind="carry-cut" />;

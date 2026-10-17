@@ -21,6 +21,7 @@ function latestClick(timeline: Timeline, timeMs: number) {
 export function cursorVisibility(timeline: Timeline, timeMs: number) {
   let opacity = 1;
   for (const event of timeline.events) {
+    if (event.kind === "transition" && event.style === "cut") continue;
     if (event.kind !== "window" && event.kind !== "transition") continue;
     const duration = event.kind === "window" ? windowTotalDuration(event) : transitionTotalDuration(event);
     const end = event.t + duration;

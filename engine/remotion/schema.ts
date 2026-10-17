@@ -18,7 +18,7 @@ const timelineEventSchema = z.discriminatedUnion("kind", [
   z.object({ t: z.number(), kind: z.literal("rail-back"), from: z.number().int().nonnegative(), to: z.number().int().nonnegative() }),
   z.object({ t: z.number(), kind: z.literal("rail-off") }),
   z.object({ t: z.number(), kind: z.literal("carry"), rect: spotlightRectSchema, text: z.string() }),
-  z.object({ t: z.number(), kind: z.literal("land"), rect: spotlightRectSchema }),
+  z.object({ t: z.number(), kind: z.literal("land"), rect: spotlightRectSchema, textStyle: z.object({ fontSize: z.number().positive(), fontFamily: z.string(), fontWeight: z.string(), color: z.string() }).optional() }),
   z.object({ t: z.number(), kind: z.literal("callout"), rect: spotlightRectSchema,
     text: z.string(), holdMs: z.number().nonnegative(), side: z.enum(["left", "right", "top", "bottom"]) }),
   z.object({ t: z.number(), kind: z.literal("role"), label: z.string() }),
@@ -38,6 +38,7 @@ const timelineEventSchema = z.discriminatedUnion("kind", [
   z.object({
     t: z.number(),
     kind: z.literal("transition"),
+    style: z.literal("cut").optional(),
     label: z.string(),
     role: z.string().optional(),
     chapter: z.object({ index: z.number().int().positive(), total: z.number().int().positive() }).optional(),

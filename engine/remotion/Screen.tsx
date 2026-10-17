@@ -24,6 +24,7 @@ type ScreenProps = {
   timeMap: TimeMap;
   timeMs: number;
   children?: ReactNode;
+  shadow?: boolean;
 };
 
 function TimelineVideo({
@@ -250,6 +251,7 @@ export function Screen({
   timeMap,
   timeMs,
   children,
+  shadow = true,
 }: ScreenProps) {
   const viewportRadius =
     chrome === "none" ? radius : `0 0 ${radius}px ${radius}px`;
@@ -262,7 +264,7 @@ export function Screen({
         border: `1px solid ${demoTheme.colors.line}`,
         borderRadius: radius,
         backgroundColor: demoTheme.colors.surface,
-        boxShadow: demoTheme.screen.shadow,
+        boxShadow: shadow ? demoTheme.screen.shadow : undefined,
       }}
     >
       {chrome === "none" ? null : (

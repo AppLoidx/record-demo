@@ -227,6 +227,7 @@ keep the clip legible:
 | Effect | Storyboard | Use for |
 |---|---|---|
 | Second window | `await d.window({ html } \| { url }, { title, holdMs, highlight, click })` | An email, notification or second app rising over the screen; `highlight` + `click` sends a cursor to that element |
+| Card-less cut | `await d.cut(async (page) => { ...switch and wait for settled UI... }, { visibleMs: 540 })` | Preferred scene change when the loop rail is shown: a short dissolve, no chapter card; all action time is removed |
 | Scene transition | `await d.transition(label, async (page) => { ...switch... }, { role })` | Masking a switch between apps or a slow page load; the action runs while the label card shows |
 | Role badge | `d.role("Customer")`, or `role` on a transition | Naming whose perspective is on screen |
 | Loop rail | `d.rail(["Bank", "Ops", "Customer", "Ops", "Bank"], 0)` | A persistent actor path; repeat with the next active index to advance |
@@ -236,7 +237,10 @@ keep the clip legible:
 - The rail replaces the role badge while visible and stays above chapter cards. Indices
   start at 0; allow 520ms for an advance, or 1720ms for a return arc, landing and fade.
 - Carry/land locators should frame the message text. Settle the camera first, then
-  `await d.carry(...)`, `await d.transition(...)`, and `await d.land(...)` in sequence.
+  `await d.carry(...)`, `await d.cut(...)` (or a chapter `d.transition(...)`), and `await d.land(...)` in sequence.
+  Cut carries glide directly to the destination; chapter carries pause below the card. Land on a text locator
+  covering the carried words: the engine captures its text range and font metrics for the final aligned crossfade.
+  A `d.zoomTo(...)` before `land()` is supported; allow the camera to settle before landing.
   Carry waits for its 300ms lift; land waits for its 600ms glide and dissolve. Elastic
   cards keep the chip visible while hidden load time is cut.
 
@@ -339,3 +343,24 @@ Run from `engine/`:
 pnpm typecheck && pnpm test
 node scripts/prove-composition.mjs
 ```
+
+### Card-less scene changes
+
+```ts
+await d.carry(sourceText, "Describe the source of funds");
+await d.cut(async (page) => {
+  await page.goto(customerUrl);
+  await d.settle(page.getByText("Describe the source of funds", { exact: true }));
+});
+await d.zoomTo(destinationSection);
+await d.hold(1800);
+await d.land(destinationText);
+```
+
+`cut` defaults to the theme's 540ms dissolve; `visibleMs` must be positive. It resets the incoming
+camera wide and freezes the last outgoing screen while the action runs off camera. Wait for the settled
+page inside the action. The renderer removes the entire action interval, including slow loads; only the
+short dissolve remains. No title, eyebrow, stepper or veil is rendered. The rail and role stay in place
+unless explicitly changed by storyboard calls. A rail return finishes by the end of a following dissolve.
+Version 1 timelines encode this as a transition with `style: "cut"`, zero outgoing/card presentation time,
+and the requested incoming duration. Regular chapter transitions remain available for deliberate section breaks.

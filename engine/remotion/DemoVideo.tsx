@@ -23,7 +23,7 @@ import {
   transitionVisibleCardMs,
 } from "../lib/time-map";
 import { WindowInset, windowMotion } from "./WindowInset";
-import { Transition, transitionMotion } from "./Transition";
+import { Transition, transitionMotion, annotationHandoffOpacity } from "./Transition";
 import { Callout } from "./Callout";
 import { RoleBadge } from "./RoleBadge";
 import { railScreenOffset, railState } from "../lib/rail";
@@ -50,6 +50,13 @@ type TimedTrack<T extends TimelineEvent> = {
   durationInFrames: number;
   event: T;
 };
+
+/** An annotation belongs to its source scene, including in hand-edited timelines. */
+export function annotationEndMs(timeline: Timeline, event: Extract<TimelineEvent, { kind: "callout" | "spotlight" }>) {
+  const naturalEnd = event.t + (event.kind === "callout" ? calloutTotalDuration(event) : spotlightTotalDuration(event));
+  return timeline.events.reduce((end, candidate) => candidate.kind === "transition" && candidate.t >= event.t
+    ? Math.min(end, candidate.t) : end, naturalEnd);
+}
 
 export function buildStudioTracks(
   timeline: Timeline,
@@ -90,11 +97,11 @@ export function buildStudioTracks(
       ),
     );
   const callouts = timeline.events.filter((event) => event.kind === "callout")
-    .map((event) => timedTrack(event, `Callout: ${event.text}`, calloutTotalDuration(event)));
+    .map((event) => timedTrack(event, `Callout: ${event.text}`, annotationEndMs(timeline, event) - event.t));
   const spotlights = timeline.events
     .filter((event): event is SpotlightEvent => event.kind === "spotlight")
     .map((event) =>
-      timedTrack(event, "Spotlight", spotlightTotalDuration(event)),
+      timedTrack(event, "Spotlight", annotationEndMs(timeline, event) - event.t),
     );
   const zooms = cameraPath.moves.map(({ event, durationMs }) =>
     timedTrack(event, `Zoom ${event.rect === null ? "out" : "in"}`, durationMs),
@@ -119,7 +126,7 @@ export function buildStudioTracks(
             cardMs: transitionVisibleCardMs(event),
           };
       return {
-        name: `Transition: ${event.label}`,
+        name: event.style === "cut" ? "Cut" : `Transition: ${event.label}`,
         ...msToFrameWindow(
           projected.t,
           transitionTotalDuration(projected),
@@ -389,6 +396,7 @@ export function DemoVideo(props: DemoVideoProps) {
       event.t <= compositionTimeMs &&
       compositionTimeMs < event.t + transitionTotalDuration(event),
   )?.event;
+  const isCut = activeTransition?.style === "cut";
   const transition = transitionMotion(activeTransition, compositionTimeMs);
   const outgoingFrame = activeTransition
     ? Math.max(
@@ -404,6 +412,11 @@ export function DemoVideo(props: DemoVideoProps) {
     timeMap,
   );
   const outgoingCamera = cameraPath.atFrame(outgoingSourceFrame);
+  const outgoingTimeMs = outgoingSourceFrame * 1000 / fps;
+  const annotationOpacity = activeTransition ? annotationHandoffOpacity(activeTransition, compositionTimeMs) : 0;
+  const incomingFrame = activeTransition ? compositionFrameAtOrAfterTime(activeTransition.t, fps) : frame;
+  const incomingTimeMs = isCut ? timeMap.toTimelineTime(incomingFrame * 1000 / fps) : sourceTimeMs;
+  const incomingCamera = isCut ? cameraPath.atFrame(incomingTimeMs * fps / 1000) : camera;
   const outroScreen = outroScreenMotion(
     outro.event ? sourceTimeMs - outro.event.t : -1,
   );
@@ -433,32 +446,52 @@ export function DemoVideo(props: DemoVideoProps) {
             transform: "translateX(-50%)",
           }}
         >
+          {isCut ? <div style={{ position: "absolute", inset: 0, width: layout.screenWidth + 2,
+            height: layout.screenHeight + layout.chromeHeight + 2, borderRadius: radius,
+            boxShadow: demoTheme.screen.shadow, opacity: screenOpacity }} /> : null}
           {activeTransition ? (
             <div style={{ position: "absolute", left: 0, top: 0, opacity: screenOpacity * transition.outgoing.opacity,
+              filter: `blur(${transition.outgoing.blur}px)`,
               transform: `translateX(${transition.outgoing.translateX * width}px) scale(${transition.outgoing.scale})` }}>
               <Freeze frame={outgoingFrame}>
-                <Screen width={layout.screenWidth} height={layout.screenHeight} radius={radius}
+                <Screen shadow={!isCut} width={layout.screenWidth} height={layout.screenHeight} radius={radius}
                   chrome={props.windowChrome} chromeHeight={layout.chromeHeight} timeline={props.timeline}
-                  videoSrc={videoSrc} camera={outgoingCamera} showCursor={false}
-                  timeMap={timeMap} timeMs={sourceTimeMs} />
+                  videoSrc={videoSrc} camera={outgoingCamera} showCursor={activeTransition.style === "cut"}
+                  timeMap={timeMap} timeMs={isCut ? outgoingTimeMs : sourceTimeMs}>
+                  {annotationOpacity > 0 ? <div data-scene-annotations style={{ opacity: annotationOpacity }}>
+                    {tracks.spotlights.filter(({ event }) => event.t <= outgoingTimeMs && outgoingTimeMs < annotationEndMs(props.timeline, event))
+                      .map(({ event }) => <SpotlightTrack key={event.t} timeline={props.timeline} spotlight={event} timeMs={outgoingTimeMs} />)}
+                  </div> : null}
+                </Screen>
               </Freeze>
+              {annotationOpacity > 0 ? <div data-scene-annotations style={{ opacity: annotationOpacity }}>
+                <div style={{ position: "absolute", top: layout.chromeHeight, left: 0,
+                  width: layout.screenWidth, height: layout.screenHeight, overflow: "hidden" }}>
+                  {tracks.callouts.filter(({ event }) => event.t <= outgoingTimeMs && outgoingTimeMs < annotationEndMs(props.timeline, event))
+                    .map(({ event }) => <Callout key={event.t} event={event} timeMs={outgoingTimeMs} timeline={props.timeline}
+                      camera={outgoingCamera} width={layout.screenWidth} height={layout.screenHeight} />)}
+                </div>
+              </div> : null}
             </div>
           ) : null}
           <div style={{ position: "relative", opacity: screenOpacity * (activeTransition ? transition.incoming.opacity : 1),
             transform: `translateX(${activeTransition ? transition.incoming.translateX * width : 0}px) scale(${outroScale * inset.mainScale * (activeTransition ? transition.incoming.scale : 1)})` }}>
-            <Screen width={layout.screenWidth} height={layout.screenHeight} radius={radius} chrome={props.windowChrome}
-              chromeHeight={layout.chromeHeight} timeline={props.timeline} videoSrc={videoSrc} camera={camera}
-              showCursor={!outro.started && !activeTransition} timeMap={timeMap} timeMs={sourceTimeMs}>
-              {tracks.spotlights.map((track) => (
+            <Freeze active={activeTransition?.style === "cut"}
+              frame={incomingFrame}>
+            <Screen shadow={!isCut} width={layout.screenWidth} height={layout.screenHeight} radius={radius} chrome={props.windowChrome}
+              chromeHeight={layout.chromeHeight} timeline={props.timeline} videoSrc={videoSrc} camera={incomingCamera}
+              showCursor={!outro.started && (!activeTransition || activeTransition.style === "cut")} timeMap={timeMap} timeMs={incomingTimeMs}>
+              {tracks.spotlights.filter(({ event }) => sourceTimeMs < annotationEndMs(props.timeline, event)).map((track) => (
                 <Sequence key={`spotlight-${track.event.t}`} name={track.name} from={track.from}
                   durationInFrames={track.durationInFrames} layout="none">
                   <SpotlightTrack timeline={props.timeline} spotlight={track.event} timeMs={sourceTimeMs} />
                 </Sequence>
               ))}
             </Screen>
+            </Freeze>
             <div style={{ position: "absolute", top: layout.chromeHeight, left: 0,
                 width: layout.screenWidth, height: layout.screenHeight, overflow: "hidden" }}>
-                {tracks.callouts.map((track) => (
+                {tracks.callouts.filter(({ event }) => sourceTimeMs < annotationEndMs(props.timeline, event)).map((track) => (
                   <Sequence key={`callout-${track.event.t}`} name={track.name} from={track.from}
                     durationInFrames={track.durationInFrames} layout="none">
                     {outro.started || activeTransition ? null : (

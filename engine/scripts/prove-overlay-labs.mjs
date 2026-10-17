@@ -15,11 +15,13 @@ const browserExecutable = chromium.executablePath();
 const serveUrl = await bundle({ entryPoint: path.join(root, "remotion/Root.tsx"), onProgress() {} });
 await mkdir(output, { recursive: true });
 const thresholds = {
+  CutLab: [0, 100, 360, 500, 720, 900, 1080, 1150, 1350, 1650, 1900, 2000, 2080, 2180, 2270, 2540, 3060, 3360],
+  CarryCutLab: [0, 360, 1650, 1700, 1880, 2000, 2270, 2540, 4190, 4490, 4600, 5020, 5200],
   RailLab: [200, 560, 1200, 1720, 2200, 2380, 2720, 3100, 3250, 3620, 3700, 3920, 3960, 4560, 4640, 4900, 5460, 5800, 6160, 6500, 6860],
   CarryLab: [2500, 2680, 2800, 3250, 3400, 3510, 3670, 4030, 4110, 4190, 4450, 4710, 5010, 5430, 5610],
   CalloutLab: [600, 800, 820, 1080, 1300, 1750, 4750, 4970, 5300, 5500, 5520, 5780, 6000, 6450, 8050, 8270],
 };
-const heroFrames = { RailLab: 178, CarryLab: 230, CalloutLab: 414 };
+const heroFrames = { CutLab: 136, CarryCutLab: 290, RailLab: 178, CarryLab: 230, CalloutLab: 414 };
 const requested = process.argv.slice(2);
 const selected = requested.length ? requested : Object.keys(thresholds);
 for (const lab of selected) if (!(lab in thresholds)) throw new Error(`Unknown lab: ${lab}`);
@@ -37,7 +39,7 @@ for (const lab of selected) {
       onProgress() {} });
     await renderStill({ serveUrl, composition, frame: heroFrames[lab], browserExecutable,
       output: path.join(output, `${stem}.png`), imageFormat: "png" });
-    const extra = { RailLab: ["chapter", 257], CarryLab: ["settled", 360], CalloutLab: ["single-line", 150] }[lab];
+    const extra = { CutLab: ["settled", 180], CarryCutLab: ["settled", 340], RailLab: ["chapter", 257], CarryLab: ["settled", 360], CalloutLab: ["single-line", 150] }[lab];
     await renderStill({ serveUrl, composition, frame: extra[1], browserExecutable,
       output: path.join(output, `${stem}-${extra[0]}.png`), imageFormat: "png" });
     execFileSync("ffmpeg", ["-y", "-v", "error", "-i", outputLocation, "-vf",
@@ -48,8 +50,9 @@ for (const lab of selected) {
       const frame = Math.ceil(ms * composition.fps / 1000);
       const start = Math.max(0, frame - 2);
       const raw = execFileSync("ffmpeg", ["-v", "error", "-i", outputLocation, "-vf",
-        `select=between(n\\,${start}\\,${frame + 2}),scale=320:-1`, "-vsync", "0",
+        `select=between(n\\,${start}\\,${start + 4}),scale=320:-1`, "-vsync", "0",
         "-frames:v", "5", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"], { maxBuffer: 12 * 1024 * 1024 });
+      if (raw.length === 0 || raw.length % 5 !== 0) throw new Error(`Missing boundary frames: ${stem} ${ms}`);
       const size = raw.length / 5;
       const diffs = [];
       for (let f = 1; f < 5; f++) {
@@ -59,7 +62,7 @@ for (const lab of selected) {
       }
       boundaries.push({ ms, frame, adjacentMeanAbsoluteRGB: diffs });
       execFileSync("ffmpeg", ["-y", "-v", "error", "-i", outputLocation, "-vf",
-        `select=between(n\\,${start}\\,${frame + 2}),scale=400:-1,tile=5x1:padding=4:margin=4:color=white`,
+        `select=between(n\\,${start}\\,${start + 4}),scale=400:-1,tile=5x1:padding=4:margin=4:color=white`,
         "-frames:v", "1", path.join(output, `${stem}-boundary-${ms}.png`)], { stdio: "inherit" });
     }
     report.push({ lab, preset, outputLocation, boundaries });

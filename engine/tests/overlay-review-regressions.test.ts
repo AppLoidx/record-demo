@@ -6,7 +6,7 @@ import type { CalloutEvent, Timeline } from "../lib/timeline";
 import { calloutPlacement } from "../lib/callout";
 import { projectCarryRect } from "../lib/carry";
 import { createSceneCameraPath } from "../lib/scene-camera";
-import { DemoVideo, layoutFor } from "../remotion/DemoVideo";
+import { DemoVideo, layoutFor, buildStudioTracks } from "../remotion/DemoVideo";
 import { Callout } from "../remotion/Callout";
 import { demoTheme } from "../remotion/theme";
 
@@ -28,8 +28,9 @@ vi.mock("remotion", async (original) => {
 // Replace video decoding only; exercise the real compositor and all carry overlay wiring.
 vi.mock("../remotion/Screen", async () => {
   const React = await import("react");
-  return { Screen: ({ children }: { children: import("react").ReactNode }) =>
-    React.createElement("div", { style: { background: "#183A42" }, "data-native-screen": true }, children) };
+  return { Screen: ({ children, timeMs, showCursor }: { children: import("react").ReactNode; timeMs: number; showCursor: boolean }) =>
+    React.createElement("div", { style: { background: "#183A42" }, "data-native-screen": true,
+      "data-screen-time": timeMs, "data-show-cursor": showCursor }, children) };
 });
 
 const timeline: Timeline = { ...fixture as Timeline, durationMs: 16000, events: [
@@ -40,6 +41,50 @@ const timeline: Timeline = { ...fixture as Timeline, durationMs: 16000, events: 
 ] };
 
 describe("review regressions", () => {
+  it.each([["cut", 0], ["cut", 1950], ["chapter", 0], ["chapter", 1950]] as const)("expires annotations at %s (emitted at %sms) and fades only their outgoing snapshot", (style, at) => {
+    const annotated: Timeline = { ...timeline, events: [
+      { t: at, kind: "callout", rect: { x: 700, y: 400, width: 400, height: 60 }, text: "OldAnnotation", side: "bottom", holdMs: 10000 },
+      { t: at, kind: "spotlight", rect: { x: 700, y: 400, width: 400, height: 60 }, durationMs: 450, holdMs: 10000 },
+      { t: 2000, kind: "transition", ...(style === "cut" ? { style: "cut" as const } : {}), label: "New page",
+        outMs: style === "cut" ? 0 : 450, cardMs: 3000, inMs: 540 },
+    ] };
+    const tracks = buildStudioTracks(annotated, 60, 1000);
+    expect(tracks.callouts[0]!.durationInFrames).toBeLessThanOrEqual(121);
+    expect(tracks.spotlights[0]!.durationInFrames).toBeLessThanOrEqual(121);
+    const sample = (frame: number) => {
+      clock.frame = frame;
+      return renderToStaticMarkup(createElement(DemoVideo, { timeline: annotated, videoSrc: "test.mp4", windowChrome: "macos" }));
+    };
+    expect(sample(119)).toContain("OldAnnotation");
+    const start = sample(120);
+    expect(start).toContain("OldAnnotation");
+    expect(start).toContain('data-scene-annotations="true" style="opacity:1"');
+    const oneFrame = sample(121);
+    const alpha = Number(oneFrame.match(/data-scene-annotations="true" style="opacity:([^"]+)"/)?.[1]);
+    expect(alpha).toBeGreaterThan(0.95);
+    expect(alpha).toBeLessThan(1);
+    expect(oneFrame).toContain("OldAnnotation");
+    expect(oneFrame).toContain("<mask");
+    for (const frame of [132, 153, 400]) {
+      expect(sample(frame)).not.toContain("OldAnnotation");
+      expect(sample(frame)).not.toContain("<mask");
+    }
+  });
+  it("pins cut snapshot props to the old and first settled frames, including the pointers", () => {
+    const cut: Timeline = { ...timeline, durationMs: 8000, events: [
+      { t: 0, kind: "cursor", x: 500, y: 500 },
+      { t: 2000, kind: "transition", style: "cut", label: "Hidden label", outMs: 0, cardMs: 3000, inMs: 540 },
+      { t: 4500, kind: "cursor", x: 1200, y: 800 },
+    ] };
+    for (const frame of [120, 136, 152]) {
+      clock.frame = frame;
+      const html = renderToStaticMarkup(createElement(DemoVideo, { timeline: cut, videoSrc: "test.mp4", windowChrome: "macos" }));
+      const times = [...html.matchAll(/data-screen-time="([^"]+)"/g)].map((match) => Number(match[1]));
+      expect(times).toEqual([119 * 1000 / 60, 5000]);
+      expect(html.match(/data-show-cursor="true"/g)).toHaveLength(2);
+      expect(html).not.toContain("Hidden label");
+    }
+  });
   it("rounds multi-line callouts without clipping their outer glyphs", () => {
     const event: CalloutEvent = { t: 0, kind: "callout", rect: { x: 800, y: 400, width: 300, height: 60 },
       text: "The customer reads this explanation and can return with the additional information requested by the Bank", holdMs: 3000, side: "bottom" };

@@ -51,9 +51,12 @@ export function carryMotion(flight: CarryFlight, timeMs: number, source: Rect, t
   const glide = p(timeMs - glideStart, glideMs);
   // Settle before dissolving: moving text must never blend with stationary UI glyphs.
   const landing = p(timeMs - flight.land.t, t.landMs - t.dissolveMs);
-  const rect = mixRect(mixRect(source, dock, glide), target, landing);
+  const direct = flight.transition.style === "cut";
+  const travel = p(timeMs - glideStart, Math.max(1, flight.land.t + t.landMs - t.dissolveMs - glideStart));
+  const rect = direct ? mixRect(source, target, travel) : mixRect(mixRect(source, dock, glide), target, landing);
   return { rect,
-    scale: 1 + (t.liftScale - 1) * lift * (1 - landing),
+    landing: direct ? travel : landing,
+    scale: 1 + (t.liftScale - 1) * lift * (1 - (direct ? travel : landing)),
     opacity: p(age, t.enterMs) * (1 - p(timeMs - flight.land.t - t.landMs + t.dissolveMs, t.dissolveMs)),
   };
 }

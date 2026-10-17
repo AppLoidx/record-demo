@@ -23,6 +23,7 @@ export type TimeMap = {
 };
 
 export function transitionVisibleCardMs(event: TransitionEvent) {
+  if (event.style === "cut") return 0;
   return Math.min(
     event.cardMs,
     event.visibleCardMs ?? demoTheme.transition.visibleCardMs,

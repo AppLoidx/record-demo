@@ -31,9 +31,14 @@ export function Rail({ state, width, height, outroProgress = 0, screenShift = 0 
             fill="none" strokeWidth={p.scale} />
           {[...(layer.trails ?? []), ...(layer.arc ? [layer.arc] : [])].map((arc, index) => {
             const from = p.nodes[arc.from]!.center, to = p.nodes[arc.to]!.center;
-            return <path key={index} d={`M ${from} ${y} Q ${(from + to) / 2} ${y + t.arcDepth * p.scale} ${to} ${y}`}
-            fill="none" stroke={demoTheme.colors.accentPrimary} strokeWidth={1.4 * p.scale} strokeLinecap="round"
-            pathLength={1} strokeDasharray={1} strokeDashoffset={1 - arc.draw} opacity={arc.opacity * 0.6} />;
+            const u = arc.draw;
+            const dotX = from + (to - from) * u;
+            const dotY = y + 2 * (1 - u) * u * t.arcDepth * p.scale;
+            return <g key={index} opacity={arc.opacity}><path d={`M ${from} ${y} Q ${(from + to) / 2} ${y + t.arcDepth * p.scale} ${to} ${y}`}
+            fill="none" stroke={demoTheme.colors.accentPrimary} strokeWidth={t.arcStroke * p.scale} strokeLinecap="round"
+            pathLength={1} strokeDasharray={1} strokeDashoffset={1 - arc.draw} />
+              <circle cx={dotX} cy={dotY} r={t.arcDotRadius * p.scale} fill={demoTheme.colors.accentPrimary} />
+            </g>;
           })}
           {p.nodes.map((node, i) => <circle key={i} cx={node.center} cy={y} r={t.dotSize * p.scale / 2}
             fill={demoTheme.colors.accentPrimary} opacity={0.2 + 0.5 * clamp(layer.active - i + 1)} />)}
