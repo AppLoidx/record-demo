@@ -1,0 +1,36 @@
+{
+  "message": "Describe the source of funds",
+  "rect": {
+    "x": 680,
+    "y": 654,
+    "width": 520,
+    "height": 72
+  },
+  "textStyle": {
+    "fontSize": 28,
+    "fontFamily": "Geist Sans",
+    "fontWeight": "400",
+    "color": "rgb(66, 66, 66)"
+  },
+  "lines": [
+    {
+      "rect": {
+        "x": 906,
+        "y": 654,
+        "width": 294,
+        "height": 32
+      },
+      "text": "Describe the source of"
+    },
+    {
+      "rect": {
+        "x": 680,
+        "y": 694,
+        "width": 74,
+        "height": 32
+      },
+      "text": "funds"
+    }
+  ],
+  "lineCount": 2
+}

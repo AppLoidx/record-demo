@@ -52,9 +52,12 @@ export function landBackground(element: Element) {
   for (let current: Element | null = element; current; current = current.parentElement) {
     const color = getComputedStyle(current).backgroundColor;
     if (color === "transparent") continue;
-    const alpha = color.startsWith("rgba(") ? color.slice(5, -1).split(",")[3]?.trim()
-      : color.match(/\/\s*([\d.]+)\s*\)$/)?.[1];
-    if (alpha !== undefined && Number(alpha) === 0) continue;
+    const raw = color.startsWith("rgba(") ? color.slice(5, -1).split(",")[3]?.trim()
+      : color.match(/\/\s*([\d.]+%?)\s*\)$/)?.[1];
+    const alpha = raw === undefined ? 1 : raw.endsWith("%") ? Number(raw.slice(0, -1)) / 100 : Number(raw);
+    // A translucent tint would let the real text show through the concealer: keep
+    // walking to the first opaque layer (the tint itself is lost, never see-through).
+    if (alpha < 1) continue;
     return color;
   }
   return undefined;
