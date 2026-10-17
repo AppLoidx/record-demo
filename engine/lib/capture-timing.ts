@@ -1,12 +1,16 @@
 /** Packet timestamps and corrections are in seconds in the master's PTS domain. */
 export type ClockStep = { atSeconds: number; correctionSeconds: number };
 
+// WSL steps the wall clock forward 1.3-2.5 s every ~33 s; x11grab stamps frames with it.
+// Genuine capture stalls stay near 1 s or below, so anything above this is a clock step.
+const CLOCK_STEP_THRESHOLD_SECONDS = 1.2;
+
 export function detectClockSteps(pts: readonly number[], captureFps: number): ClockStep[] {
   const steps: ClockStep[] = [];
   for (let index = 1; index < pts.length; index += 1) {
     const atSeconds = pts[index]!;
     const gap = atSeconds - pts[index - 1]!;
-    if (gap > 1.5) {
+    if (gap > CLOCK_STEP_THRESHOLD_SECONDS) {
       steps.push({ atSeconds, correctionSeconds: gap - 1 / captureFps });
     }
   }

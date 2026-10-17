@@ -35,8 +35,9 @@ describe("capture clock correction", () => {
     expect(correctCaptureTimeMs(3300, steps)).toBeCloseTo(300);
   });
 
-  it("preserves genuine drops of 1.0s and the 1.5s threshold", () => {
-    expect(detectClockSteps([0, 1, 2.5], 30)).toEqual([]);
+  it("preserves genuine drops of 1.0s and corrects 1.3s WSL steps", () => {
+    expect(detectClockSteps([0, 1, 2.1], 30)).toEqual([]);
+    expect(detectClockSteps([0, 1, 2.3], 30)).toHaveLength(1);
     expect(detectClockSteps([], 30)).toEqual([]);
   });
 
