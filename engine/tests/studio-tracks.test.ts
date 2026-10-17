@@ -6,6 +6,62 @@ import { msToFrameWindow } from "../remotion/theme";
 import { createCameraPath } from "../lib/camera";
 
 describe("buildStudioTracks", () => {
+  it("projects tracks through a card cut and shortens spans crossing it", () => {
+    const timeline: Timeline = {
+      ...(fixtureTimeline as Timeline),
+      durationMs: 8_000,
+      events: [
+        { t: 0, kind: "role", label: "Customer" },
+        {
+          t: 1_000,
+          kind: "transition",
+          label: "Switch app",
+          outMs: 500,
+          cardMs: 3_000,
+          visibleCardMs: 1_000,
+          inMs: 500,
+        },
+        {
+          t: 2_000,
+          kind: "caption",
+          text: "This caption crosses the hidden tail",
+          durationMs: 4_000,
+        },
+        { t: 3_000, kind: "role", label: "Ops" },
+        {
+          t: 5_000,
+          kind: "window",
+          image: "window.png",
+          imageWidth: 800,
+          imageHeight: 600,
+          enterMs: 100,
+          holdMs: 200,
+          exitMs: 100,
+        },
+      ],
+    };
+
+    const tracks = buildStudioTracks(timeline, 60, 360);
+
+    expect(tracks.transitions[0]).toMatchObject({
+      from: 60,
+      durationInFrames: 121,
+      event: { t: 1_000, cardMs: 1_000 },
+    });
+    expect(tracks.captions[0]).toMatchObject({
+      from: 120,
+      durationInFrames: 121,
+    });
+    expect(tracks.windows[0]).toMatchObject({
+      from: 180,
+      durationInFrames: 25,
+    });
+    expect(tracks.roles[1]).toMatchObject({
+      from: 150,
+      durationInFrames: 211,
+    });
+  });
+
   it("uses the rendered auto duration for zoom tracks at each output aspect", () => {
     const timeline: Timeline = {
       ...(fixtureTimeline as Timeline),

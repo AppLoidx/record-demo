@@ -6,7 +6,14 @@ import { cursorPositionFromPoints } from "../lib/cursor-position.ts";
 import {
   parseTimeline,
   spotlightTotalDuration,
+  calloutTotalDuration,
+  windowTotalDuration,
+  transitionTotalDuration,
 } from "../lib/timeline.ts";
+import {
+  createTimeMap,
+  timelineFrameForCompositionFrame,
+} from "../lib/time-map.ts";
 
 // Static stretches at or above this duration read as dead air.
 const DEAD_AIR_THRESHOLD_MS = 3_500;
@@ -35,7 +42,7 @@ registerHooks({
   },
 });
 
-const { createCameraPath } = await import("../lib/camera.ts");
+const { createSceneCameraPath } = await import("../lib/scene-camera.ts");
 
 function percentile(values, percentileValue) {
   if (values.length === 0) return 0;
@@ -70,12 +77,14 @@ function vectorDistance(left, right) {
 
 const stationaryVelocity = { zoom: 0, panX: 0, panY: 0 };
 
+/** @param {(frame: number) => boolean} [hiddenFrame] Fully masked camera frames. */
 export function scoreCameraSeries(
   samples,
   moves,
   fps,
   baseScale,
   frameWidth,
+  hiddenFrame = () => false,
 ) {
   const velocities = samples.slice(1).map((sample, index) => {
     const previous = samples[index];
@@ -85,6 +94,7 @@ export function scoreCameraSeries(
 
     return {
       frame: index + 1,
+      hidden: hiddenFrame(index) || hiddenFrame(index + 1),
       zoom,
       panX,
       panY,
@@ -92,10 +102,11 @@ export function scoreCameraSeries(
       panFrameWidthsPerSecond: Math.hypot(panX, panY),
     };
   });
-  const relativeZoomRates = velocities.map(
+  const visibleVelocities = velocities.filter((velocity) => !velocity.hidden);
+  const relativeZoomRates = visibleVelocities.map(
     (velocity) => velocity.relativeZoomRate,
   );
-  const panFrameRates = velocities.map(
+  const panFrameRates = visibleVelocities.map(
     (velocity) => velocity.panFrameWidthsPerSecond,
   );
   const relativeZoomRateMax = Math.max(0, ...relativeZoomRates);
@@ -103,7 +114,7 @@ export function scoreCameraSeries(
 
   const perMove = moves.map((move) => {
     const endFrame = move.startFrame + move.durationFrames;
-    const active = velocities.filter(
+    const active = visibleVelocities.filter(
       (velocity) =>
         velocity.frame > move.startFrame && velocity.frame <= endFrame,
     );
@@ -128,19 +139,29 @@ export function scoreCameraSeries(
     const after =
       velocities.find((velocity) => velocity.frame > endFrame) ??
       stationaryVelocity;
-    const velocityWindow = [before, ...active, after];
+    const velocityWindow = [
+      before,
+      ...velocities.filter(
+        (velocity) =>
+          velocity.frame > move.startFrame && velocity.frame <= endFrame,
+      ),
+      after,
+    ];
     const maxVelocityJump = Math.max(
       0,
-      ...velocityWindow.slice(1).map((velocity, index) =>
-        vectorDistance(velocityWindow[index], velocity),
-      ),
+      ...velocityWindow
+        .slice(1)
+        .map((velocity, index) =>
+          velocity.hidden || velocityWindow[index].hidden
+            ? 0
+            : vectorDistance(velocityWindow[index], velocity),
+        ),
     );
     const maxVelocityJumpRatio =
       peakVelocity === 0 ? 0 : maxVelocityJump / peakVelocity;
     const edgeVerdict =
       startEdgeRatio <= 0.15 && endEdgeRatio <= 0.15 ? "PASS" : "WARN";
-    const discontinuityVerdict =
-      maxVelocityJumpRatio > 0.5 ? "FAIL" : "PASS";
+    const discontinuityVerdict = maxVelocityJumpRatio > 0.5 ? "FAIL" : "PASS";
 
     return {
       eventIndex: move.eventIndex,
@@ -180,9 +201,7 @@ export function scoreCameraSeries(
       0,
       ...perMove.map((move) => move.maxVelocityJumpRatio),
     ),
-    verdict: perMove.some(
-      (move) => move.discontinuityVerdict === "FAIL",
-    )
+    verdict: perMove.some((move) => move.discontinuityVerdict === "FAIL")
       ? "FAIL"
       : "PASS",
   };
@@ -202,6 +221,10 @@ export function scoreCameraSeries(
 }
 
 function eventEnd(event, zoomDurationMs) {
+  if (event.kind === "callout") return event.t + calloutTotalDuration(event);
+  if (event.kind === "window") return event.t + windowTotalDuration(event);
+  if (event.kind === "transition")
+    return event.t + transitionTotalDuration(event);
   if (event.kind === "spotlight") {
     return event.t + spotlightTotalDuration(event);
   }
@@ -211,37 +234,41 @@ function eventEnd(event, zoomDurationMs) {
   return "durationMs" in event ? event.t + event.durationMs : undefined;
 }
 
-function cursorTravel(cursorPoints, startMs, endMs) {
+function cursorTravel(cursorPoints, startMs, endMs, timeMap) {
   const sampleTimes = cursorPoints
-    .filter((point) => point.t > startMs && point.t < endMs)
-    .map((point) => point.t);
+    .map((point) => timeMap.toCompositionTime(point.t))
+    .filter((timeMs) => timeMs > startMs && timeMs < endMs);
   const times = [startMs, ...sampleTimes, endMs];
   const positions = times
-    .map((timeMs) => cursorPositionFromPoints(cursorPoints, timeMs))
+    .map((timeMs) =>
+      cursorPositionFromPoints(
+        cursorPoints,
+        timeMap.toTimelineTime(timeMs),
+      ),
+    )
     .filter((position) => position !== null);
 
   return positions.slice(1).reduce((total, position, index) => {
     const previous = positions[index];
-    return total + Math.hypot(
-      position.x - previous.x,
-      position.y - previous.y,
-    );
+    return total + Math.hypot(position.x - previous.x, position.y - previous.y);
   }, 0);
 }
 
 export function detectDeadAirSpans(
   timeline,
-  cameraPath = createCameraPath(timeline, FPS, FRAME_WIDTH, FRAME_HEIGHT),
+  cameraPath = createSceneCameraPath(timeline, FPS, FRAME_WIDTH, FRAME_HEIGHT),
 ) {
+  const timeMap = createTimeMap(timeline);
   const zoomDurations = new Map(
     cameraPath.moves.map((move) => [move.event, move.durationMs]),
   );
   const scanEndMs = Math.max(
     0,
-    timeline.durationMs - DEAD_AIR_END_EXEMPTION_MS,
+    timeMap.durationMs - DEAD_AIR_END_EXEMPTION_MS,
   );
   const activityTimes = new Set([0, scanEndMs]);
-  const addActivityTime = (timeMs) => {
+  const addActivityTime = (timelineTimeMs) => {
+    const timeMs = timeMap.toCompositionTime(timelineTimeMs);
     if (timeMs >= 0 && timeMs <= scanEndMs) {
       activityTimes.add(timeMs);
     }
@@ -258,12 +285,26 @@ export function detectDeadAirSpans(
       addActivityTime(event.t + event.durationMs);
       addActivityTime(event.t + event.durationMs + event.holdMs);
     }
+    if (event.kind === "window") {
+      addActivityTime(event.t + event.enterMs);
+      addActivityTime(event.t + event.enterMs + event.holdMs);
+    }
+    if (event.kind === "transition") {
+      addActivityTime(event.t + event.outMs);
+      addActivityTime(event.t + event.outMs + event.cardMs);
+    }
     const endMs = eventEnd(event, zoomDurations.get(event));
     if (endMs !== undefined) addActivityTime(endMs);
   }
 
   const outro = timeline.events.find((event) => event.kind === "outro");
-  const outroEndMs = outro ? eventEnd(outro) : undefined;
+  const outroStartMs = outro
+    ? timeMap.toCompositionTime(outro.t)
+    : undefined;
+  const outroTimelineEndMs = outro ? eventEnd(outro) : undefined;
+  const outroEndMs = outroTimelineEndMs === undefined
+    ? undefined
+    : timeMap.toCompositionTime(outroTimelineEndMs);
   const boundaries = [...activityTimes].sort((left, right) => left - right);
 
   return boundaries.slice(1).flatMap((endMs, index) => {
@@ -271,15 +312,28 @@ export function detectDeadAirSpans(
     const durationMs = endMs - startMs;
     const overlapsOutro =
       outro !== undefined &&
+      outroStartMs !== undefined &&
       outroEndMs !== undefined &&
       startMs < outroEndMs &&
-      endMs > outro.t;
-    const travel = cursorTravel(cursorPoints, startMs, endMs);
+      endMs > outroStartMs;
+    const travel = cursorTravel(cursorPoints, startMs, endMs, timeMap);
 
     if (
       durationMs < DEAD_AIR_THRESHOLD_MS ||
       travel >= DEAD_AIR_CURSOR_TRAVEL_PX ||
-      overlapsOutro
+      overlapsOutro ||
+      timeline.events.some(
+        (event) =>
+          (event.kind === "callout" &&
+            startMs >= timeMap.toCompositionTime(event.t) &&
+            endMs <= timeMap.toCompositionTime(event.t + calloutTotalDuration(event))) ||
+          (event.kind === "window" &&
+            startMs >= timeMap.toCompositionTime(event.t) &&
+            endMs <= timeMap.toCompositionTime(event.t + windowTotalDuration(event))) ||
+          (event.kind === "transition" &&
+            startMs >= timeMap.toCompositionTime(event.t) &&
+            endMs <= timeMap.toCompositionTime(event.t + transitionTotalDuration(event))),
+      )
     ) {
       return [];
     }
@@ -289,6 +343,7 @@ export function detectDeadAirSpans(
 }
 
 export function scoreTimeline(timeline) {
+  const timeMap = createTimeMap(timeline);
   const sourceWidth =
     timeline.viewport.width * timeline.viewport.deviceScaleFactor;
   const sourceHeight =
@@ -297,14 +352,60 @@ export function scoreTimeline(timeline) {
     FRAME_WIDTH / sourceWidth,
     FRAME_HEIGHT / sourceHeight,
   );
-  const frameCount = Math.max(1, Math.ceil((timeline.durationMs / 1_000) * FPS));
-  const cameraPath = createCameraPath(timeline, FPS, FRAME_WIDTH, FRAME_HEIGHT);
-  const samples = Array.from({ length: frameCount }, (_, frame) =>
-    cameraPath.atFrame(frame),
+  const frameCount = Math.max(
+    1,
+    Math.ceil((timeMap.durationMs / 1_000) * FPS),
   );
+  const cameraPath = createSceneCameraPath(
+    timeline,
+    FPS,
+    FRAME_WIDTH,
+    FRAME_HEIGHT,
+  );
+  const samples = Array.from({ length: frameCount }, (_, frame) =>
+    cameraPath.atFrame(
+      timelineFrameForCompositionFrame(frame, FPS, timeMap),
+    ),
+  );
+  const moves = timeMap.cuts.length === 0
+    ? cameraPath.moves
+    : cameraPath.moves.map((move) => {
+        const startMs = timeMap.toCompositionTime(move.startMs);
+        const endMs = timeMap.toCompositionTime(
+          move.startMs + move.durationMs,
+        );
+        const durationMs = Math.max(0, endMs - startMs);
+        return {
+          ...move,
+          startMs,
+          startFrame: (startMs / 1_000) * FPS,
+          durationMs,
+          durationFrames: Math.max(
+            1,
+            Math.round((durationMs / 1_000) * FPS),
+          ),
+        };
+      });
 
   return {
-    ...scoreCameraSeries(samples, cameraPath.moves, FPS, baseScale, FRAME_WIDTH),
+    ...scoreCameraSeries(
+      samples,
+      moves,
+      FPS,
+      baseScale,
+      FRAME_WIDTH,
+      (frame) =>
+        timeline.events.some(
+          (event) =>
+            event.kind === "transition" &&
+            (frame * 1000) / FPS >=
+              timeMap.toCompositionTime(event.t + event.outMs) &&
+            (frame * 1000) / FPS <=
+              timeMap.toCompositionTime(
+                event.t + event.outMs + event.cardMs,
+              ),
+        ),
+    ),
     deadAirSpans: detectDeadAirSpans(timeline, cameraPath),
   };
 }

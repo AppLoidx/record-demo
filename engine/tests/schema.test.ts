@@ -39,6 +39,49 @@ function propsFor(timeline: unknown) {
 }
 
 describe("demoVideoSchema", () => {
+  it.each([undefined, 0, 725, 2_000])(
+    "round-trips transition visibleCardMs %s through both schemas",
+    (visibleCardMs) => {
+      const timeline: Timeline = {
+        ...everyEventTimeline,
+        events: [
+          {
+            t: 100,
+            kind: "transition",
+            label: "Next",
+            outMs: 450,
+            cardMs: 2_000,
+            ...(visibleCardMs === undefined ? {} : { visibleCardMs }),
+            inMs: 560,
+          },
+        ],
+      };
+      expect(parseTimeline(serializeTimeline(timeline))).toEqual(timeline);
+      expect(demoVideoSchema.parse(propsFor(timeline)).timeline).toEqual(
+        timeline,
+      );
+    },
+  );
+
+  it("rejects a negative transition visibleCardMs", () => {
+    const timeline = {
+      ...everyEventTimeline,
+      events: [
+        {
+          t: 100,
+          kind: "transition",
+          label: "Next",
+          outMs: 450,
+          cardMs: 2_000,
+          visibleCardMs: -1,
+          inMs: 560,
+        },
+      ],
+    };
+    expect(() => parseTimeline(JSON.stringify(timeline))).toThrow();
+    expect(demoVideoSchema.safeParse(propsFor(timeline)).success).toBe(false);
+  });
+
   it.each([undefined, 0, 1_200, 3_000])(
     "round-trips zoom duration %s through both schemas",
     (durationMs) => {

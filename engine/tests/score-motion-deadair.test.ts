@@ -18,6 +18,26 @@ function timeline(
 }
 
 describe("dead-air detection", () => {
+  it("reports dead air in composition time after removing a card tail", () => {
+    const result = detectDeadAirSpans(
+      timeline(10_000, [
+        {
+          t: 1_000,
+          kind: "transition",
+          label: "Cut",
+          outMs: 500,
+          cardMs: 3_000,
+          visibleCardMs: 1_000,
+          inMs: 500,
+        },
+      ]),
+    );
+
+    expect(result).toEqual([
+      { startMs: 3_000, durationMs: 4_000, verdict: "WARN" },
+    ]);
+  });
+
   it("uses resolved auto zoom duration as an activity boundary", () => {
     const subject = timeline(7_000, [
       {

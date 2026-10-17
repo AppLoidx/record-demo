@@ -6,6 +6,79 @@ description: Record a scripted screen-capture demo of any live website with Play
 
 # Record demo videos
 
+## Role and bar
+
+You are the senior motion designer on this clip. The bar is an Apple-level product video:
+premium, calm, deliberate. A take ships only when every line below holds; otherwise
+re-pace and re-record.
+
+- **Real product, real artifacts.** Real app screens, real templates (emails, pages)
+  rendered with demo data. Never a look-alike.
+- **One thing moves at a time**, and every move lands before the next starts (see
+  Choreography).
+- **Compositions are centered and intentional.** Re-frame after every layout change; never
+  leave a stale zoom on a new page.
+- **Type is designed, not dropped in.** Chapter cards and captions use the kinetic
+  entrances; text never sits on top of busy UI.
+- **Emphasis adds meaning.** Callouts and highlights only for information not already on
+  screen; highlights are soft filled areas with inner space, never thin outlines.
+- **Actions feel real.** Loading and disabled states are visible after every submit; nothing
+  vanishes the instant it is clicked.
+- **Unhurried pacing.** Give each result a beat to read; a slightly longer clip beats a
+  rushed one.
+
+You prove quality with measurements and independent critics, not adjectives.
+
+## Quality process
+
+**1. Reference -> numbers.** Read the reference frame by frame and turn it into numbers: cut
+rhythm, camera speeds, the hero motion curve, type size and timing, stage colour. Those
+numbers are the bar. Measure it, never copy it.
+
+**2. Storyboard first.** One table before any capture:
+
+| Time | Shot | What it proves | Cut out |
+|---|---|---|---|
+
+Keep shots short - aim for 2-3 s; a longer shot is fine when an action needs it (typing,
+a loading state). Total length follows the content; a full flow can run well past 25 s.
+Frame 0 is already the money shot.
+
+**3. Build rules.**
+- One seek clock: every pixel is a pure function of time. Overlays derive from the frame
+  number only - no state, `Date`, or randomness (Remotion compositions already work this way).
+- Build every element (each overlay, each shot, the type) alone in its own lab before it
+  joins the film: its own composition or proof render, checked frame by frame.
+- Overlays and type are code; the screen here is a real capture. Every threshold is a
+  crossfade - hard switches flash for a frame.
+
+**4. Critic loop.**
+- Builder and critic are always separate agents. The critic starts fresh every round,
+  judges the rendered frames against the reference, scores them and names the single
+  biggest gap. The builder fixes only that.
+- Blind test: mix your frames with the reference's. If a judge can tell which is which, it
+  is not done.
+- Wow gate: split the film into 3 s windows. Every one must be a yes.
+
+**5. Sound.** One real track, lined up so its own final hit lands on the end card and
+played as one continuous piece; cut on its beat. A clean, real sound on every small move,
+with the hero moments clearly audible. Not supported yet: the engine renders muted, and the
+track must come from the user (licensing). Until then, ship silent and say so.
+
+**6. Measure, then watch like the client.** Render at 60 fps and measure:
+
+```bash
+ffmpeg -i out/<name>-16x9.mp4 -vf freezedetect=n=0.001:d=0.5 -an -f null - 2>&1 | grep freeze_   # frozen frames
+ffmpeg -i out/<name>-16x9.mp4 -vf blackdetect=d=0.05:pix_th=0.10 -an -f null - 2>&1 | grep black_  # black frames
+ffmpeg -i out/<name>-16x9.mp4 -af ebur128 -f null - 2>&1 | tail -12                                 # loudness (when audio exists)
+```
+
+One-frame pops: compare adjacent frames in the frame sheets and at every transition boundary
+(the engine tests enforce continuity; the render must too). Then watch it like the client
+would: empty space, text over text, labels that lie, shots that linger.
+
+## How it works
+
 Write an ad-hoc Playwright storyboard, then run the self-contained engine from any cwd.
 Do not add the storyboard to an application repo unless the user asks for that.
 Keep the storyboard self-contained; the runner stages that file inside the engine before
@@ -146,6 +219,76 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
 - A scene with nothing to Act on (read-only reveal) is Frame + Cue + a hold long enough to
   read the caption (~2s) or a spotlight.
 
+## Multi-actor stories: windows, transitions, roles
+
+For flows that cross people or apps (customer app -> email -> ops tool), these effects
+keep the clip legible:
+
+| Effect | Storyboard | Use for |
+|---|---|---|
+| Second window | `await d.window({ html } \| { url }, { title, holdMs, highlight, click })` | An email, notification or second app rising over the screen; `highlight` + `click` sends a cursor to that element |
+| Card-less cut | `await d.cut(async (page) => { ...switch and wait for settled UI... }, { visibleMs: 540 })` | Preferred scene change when the loop rail is shown: a short dissolve, no chapter card; all action time is removed |
+| Scene transition | `await d.transition(label, async (page) => { ...switch... }, { role })` | Masking a switch between apps or a slow page load; the action runs while the label card shows |
+| Role badge | `d.role("Customer")`, or `role` on a transition | Naming whose perspective is on screen |
+| Loop rail | `d.rail(["Bank", "Ops", "Customer", "Ops", "Bank"], 0)` | A persistent actor path; repeat with the next active index to advance |
+| Return arc | `d.railBack(3, 2)`, `d.railOff()` | Showing a loop back, then hiding the rail when the story ends |
+| Message carry | `await d.carry(source, "Please revise this answer")`; transition; `await d.land(destination)` | Carrying the same words across a cut or chapter into the next app |
+
+- The rail replaces the role badge while visible and stays above chapter cards. Indices
+  start at 0; allow 520ms for an advance, or 1720ms for a return arc, landing and fade.
+- Carry/land locators should frame the message text. Author the sequence as:
+  **carry at submit → cut/transition → land → railBack → caption**. For example:
+
+  ```ts
+  await d.carry(sourceText, message);
+  await d.click(submitButton);
+  await d.cut(async (page) => {
+    await page.goto(customerUrl);
+    await d.settle(destinationText);
+    // Scroll and any destination zoom must settle inside this action.
+  });
+  await d.land(destinationText, { text: message });
+  d.railBack(3, 2);
+  await d.hold(1720);
+  d.caption("Review the updated answer");
+  ```
+
+  Carry lifts for 300ms (scale 1→1.04, growing shadow), then holds at that exact position
+  above both scene layers through the whole dissolve. Card transitions use the same hold.
+  Flight starts only after both the dissolve and the land cue, follows one gently upward-bowed
+  700ms arc with the theme camera easing, then reveals the native text over 250ms. There is no
+  intermediate landing or resting dock. Awaited `land()` includes flight and reveal (950ms),
+  so subsequent rail/caption calls follow them; the engine does not couple those effects.
+  The filled, fully rounded pill uses opaque theme accent tint, medium ink, padding and soft
+  elevation. Source font metrics are captured at carry; destination Range/font metrics keep
+  the final crossfade aligned. Put destination zooms inside the scene-change action and let
+  them settle there. A later land cue simply extends the hold; the chip follows the live camera
+  during flight/reveal if the camera continues moving. Elastic cards remove hidden load time.
+
+- Window content must be the real artifact: render the product's own template (for example
+  the real email renderer with demo inputs). Never hand-write a look-alike.
+- Do slow, ugly work (page loads, prefilling a long form, resetting mock state) inside a
+  transition action, not on camera.
+- Transitions reset the camera to wide; do not `zoomOut()` right before one.
+- `d.callout(locator, text)` only when the label adds something not already on screen (the
+  outcome, a consequence). Never restate visible UI text ("Merchant replied" next to a
+  "Merchant replied" badge) or announce what the next scene shows anyway; one or two per
+  clip is plenty.
+- Mocked backends answer instantly, so real loading states flash by. Add realistic latency
+  (~1s on submits) in the mock or a `context.route` delay so the product's own spinners and
+  disabled states show; never draw a fake loader.
+
+## Recording local apps (dev servers, mocks)
+
+- **Warm every route in `seed`** (visit each URL once, `waitForLoadState("load")` plus about
+  1s). Cold dev-server compiles during capture stall the screen. Never wait on
+  `networkidle`: dev servers keep sockets open and each wait burns 30s of the 300s test budget.
+- **Rename on-screen fixture names at the data source** (the mock fixtures), not by editing
+  DOM text. A MutationObserver text rewrite causes hydration mismatches and breaks
+  interactive widgets (observed: a file upload silently ignored files).
+- **Dev-mode widgets hydrate late.** Retry setting a file on `input[type=file]` until the
+  file chip shows, rather than trusting one `setInputFiles` right after load.
+
 ## Motion and storyboard rules (what makes a clip postable)
 
 - **One camera move per scene, not per field.** Zoom once to the section, act inside it.
@@ -171,8 +314,8 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
 - **Always assert the end state** - without it the pipeline renders a polished video of
   a broken flow.
 - Never ship a clip with a localhost URL, internal hostname, provider name, or real
-  credentials on screen. Mask presentation-only strings in the seed (window.open patch and a
-  MutationObserver input rewrite).
+  credentials on screen. Prefer renaming at the data source; a seed-time DOM rewrite
+  (window.open patch, MutationObserver) is only safe on static or non-hydrated pages.
 
 ## Verify before reporting done
 
@@ -186,7 +329,7 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
    and read the frames. Zoom clipping, caption lag, cutout desync and on-screen dev URLs
    are invisible in a green test run.
 5. **Review every move as a frame sheet**: `node scripts/frame-sheets.mjs <name>` writes one
-   contact sheet per zoom, spotlight and outro to `out/sheets/` (12 frames at 8fps spanning
+   contact sheet per zoom, spotlight, window, transition and outro to `out/sheets/` (12 frames at 8fps spanning
    the move). Read each sheet and check, frame by frame:
 
    | Check | Fail looks like |
@@ -207,6 +350,7 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
 | `Invalid demo viewport ...` abort | Geometry drifted - fix launch flags, never relax the assertion. |
 | Cursor offset ~174px vertically | Chrome ran tabbed, not `--app`. |
 | Could not find clapperboard frames | Detector tolerance is 64 (external captures average impure); if it still misses, check the capture isn't black (Chrome on wrong DISPLAY). |
+| Captions/cursor land over the wrong screen after ~30s (WSL) | The VM wall clock steps ahead ~2.5s every ~32s; the runner removes these steps from capture timing (log line "Clock step at master ..."). If drift persists, compare frames against timeline events before blaming the storyboard. |
 | Captions/cursor drift over the clip | Clapperboard sync - don't wall-clock subtract. |
 | Spotlight cutout off its target | Rect raced a smooth scroll - measureTarget's stability loop should hold; if it recurs, raise its timeout. |
 | Words cut mid-letter at crop edge | `zoomTo(locator, { padding: 120 })` for modals. |
@@ -220,3 +364,72 @@ Run from `engine/`:
 pnpm typecheck && pnpm test
 node scripts/prove-composition.mjs
 ```
+
+### Card-less scene changes
+
+```ts
+await d.carry(sourceText, "Describe the source of funds");
+await d.cut(async (page) => {
+  await page.goto(customerUrl);
+  await d.settle(page.getByText("Describe the source of funds", { exact: true }));
+  await d.zoomTo(destinationSection);
+  await d.hold(1800);
+});
+await d.land(destinationText);
+```
+
+`cut` defaults to the theme's 540ms dissolve; `visibleMs` must be positive. It resets the incoming
+camera wide and freezes the last outgoing screen while the action runs off camera. Wait for the settled
+page inside the action. The renderer removes the entire action interval, including slow loads; only the
+short dissolve remains. No title, eyebrow, stepper or veil is rendered. The rail and role stay in place
+unless explicitly changed by storyboard calls. A rail return finishes by the end of a following dissolve.
+Version 1 timelines encode this as a transition with `style: "cut"`, zero outgoing/card presentation time,
+and the requested incoming duration. Regular chapter transitions remain available for deliberate section breaks.
+
+### Concealed carry destinations
+
+Use `await d.land(destinationText, { conceal?: boolean, concealColor?: string })` immediately after
+`await d.cut(...)` or `await d.transition(...)`. Concealment defaults to true for both styles. The
+renderer covers the destination from the first incoming frame until the chip arrives, then crossfades
+the chip glyphs into the real text over 250ms while its tint, shadow and the cover fade away.
+The pill holds through the scene change, then takes one 700ms arc after the later of dissolve end
+and the land cue. Chapter cards do not add an intermediate landing. Material contracts to the exact
+line boxes at arrival, preserving adjacent status text when a message wraps.
+
+The cover uses the target's first non-transparent computed background color, walking up its ancestors,
+and falls back to the theme surface (white). Supply an opaque `concealColor` to override it,
+or `conceal: false` to opt out. Target the exact carried words on a settled page:
+the land rectangle is used retrospectively from the incoming frame, so keep the destination geometry
+stable during that interval (perform navigation, scrolling and resets inside the scene-change action).
+With a pending carry, `land()` never scrolls. An offscreen or moved target raises
+"land target moved after the scene change; scroll inside the cut action".
+Camera transforms and the incoming screen dissolve apply to the cover automatically. To arrive already
+zoomed, issue the destination zoom inside the action and let it settle there before calling land.
+
+When the message is a bare text node inside a status paragraph, select its text explicitly:
+
+```ts
+// <p><span>Needs changes</span> · {message}</p>
+const { lineCount } = await d.land(statusParagraph, { text: message });
+```
+
+`text` selects the first occurrence with visible client geometry across the locator's descendant text
+nodes using DOM Ranges; matching collapses whitespace in both the request and DOM text.
+The returned `rect` is the union of the measured line boxes; `lines` and `lineCount` are also returned
+and recorded on the land event. Wrapped messages land as matching individual lines, with a cover per
+line, so the status prefix stays visible even when it lies inside the union rectangle. Empty, missing,
+or invisible requested text raises an error instead of using the surrounding paragraph.
+
+
+### Captions live below the capture
+
+`d.caption(...)` and `d.step(...)` keep their existing API. Any caption event reserves a stage
+band for the whole film (6% of frame height in each preset), below the screen frame and its chrome.
+The screen fits between that band and the largest authored rail band; late captions and rail changes
+do not resize or move it. Films without captions retain their usual frame layout.
+
+Caption text uses medium-weight theme ink directly on the stage gradient, about 30px at 2560×1440,
+scaled for compact formats and fitted to the available band when it wraps. Words rise and fade from
+the cue itself, with a quick 140ms exit; there is no pill, backing, or empty-shape prelude. Keep captions
+short imperatives so they stay easy to read. CaptionLab covers short, wrapped and one-word captions,
+plus a rail appearing and disappearing while the bottom action remains clear.

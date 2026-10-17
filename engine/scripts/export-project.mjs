@@ -11,6 +11,8 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { stageWindowAssets } from "../lib/window-assets.mjs";
+
 export const usage =
   "Usage: node scripts/export-project.mjs <name> [--out <dir>]";
 
@@ -246,6 +248,7 @@ export async function exportProject({
     ),
     copyFile(videoPath, path.join(outputDirectory, "public", videoName)),
     copyFonts(engineRoot, outputDirectory),
+    stageWindowAssets(JSON.parse(await readFile(timelinePath, "utf8")), artifactsDirectory, path.join(outputDirectory, "public")),
   ]);
 
   return outputDirectory;

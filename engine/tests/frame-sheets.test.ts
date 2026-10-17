@@ -6,6 +6,47 @@ import type { Timeline } from "../lib/timeline";
 import fixture from "../fixtures/timeline.json";
 
 describe("frame sheet windows", () => {
+  it("maps effect boundaries before adding composition-time handles", () => {
+    const timeline: Timeline = {
+      ...(fixture as Timeline),
+      durationMs: 8_000,
+      events: [
+        {
+          t: 1_000,
+          kind: "transition",
+          label: "Cut",
+          outMs: 500,
+          cardMs: 3_000,
+          visibleCardMs: 1_000,
+          inMs: 500,
+        },
+        {
+          t: 1_800,
+          kind: "spotlight",
+          rect: { x: 10, y: 10, width: 100, height: 100 },
+          durationMs: 200,
+          holdMs: 200,
+        },
+        {
+          t: 4_600,
+          kind: "window",
+          image: "window.png",
+          imageWidth: 800,
+          imageHeight: 600,
+          enterMs: 100,
+          holdMs: 200,
+          exitMs: 100,
+        },
+      ],
+    };
+
+    expect(computeFrameSheets(timeline, 6_000)).toMatchObject([
+      { kind: "transition", startMs: 750, endMs: 3_500 },
+      { kind: "spotlight", startMs: 1_550, endMs: 2_900 },
+      { kind: "window", startMs: 2_350, endMs: 3_500 },
+    ]);
+  });
+
   it("orders motion events, resolves auto zooms and samples 12 inclusive times", () => {
     const timeline: Timeline = {
       ...(fixture as Timeline),
