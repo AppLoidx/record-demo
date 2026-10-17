@@ -37,11 +37,11 @@ export const carryLabTimeline: Timeline = {
   ...railLabTimeline, name: "carry-lab", durationMs: 11200,
   events: [
     { t: 0, kind: "zoom", rect: { x: 500, y: 280, width: 920, height: 520 } },
-    { t: 2500, kind: "carry", rect: source, text: "Describe the source of funds" },
+    { t: 2500, kind: "carry", rect: source, text: "Describe the source of funds", textStyle: landTextLab.textStyle },
     { t: 2800, kind: "transition", label: "Sent back to the customer", role: "Customer", chapter: { index: 3, total: 5 },
       outMs: 450, cardMs: 4000, visibleCardMs: 1200, inMs: 560 },
     { t: 5000, kind: "zoom", rect: { x: 500, y: 480, width: 920, height: 520 } },
-    { t: 7810, kind: "land", rect: target },
+    { t: 7810, kind: "land", rect: landTextLab.singleLine, textStyle: landTextLab.textStyle, concealColor: demoTheme.colors.backdrop },
   ],
 };
 export const calloutLabTimeline: Timeline = {
@@ -72,7 +72,7 @@ export const carryCutLabTimeline: Timeline = {
   events: [
     { t: 0, kind: "rail", steps: labSteps, active: 2 },
     { t: 0, kind: "zoom", durationMs: 1650, rect: { x: 500, y: 280, width: 920, height: 520 } },
-    { t: 1700, kind: "carry", rect: source, text: "Describe the source of funds" },
+    { t: 1700, kind: "carry", rect: source, text: "Describe the source of funds", textStyle: landTextLab.textStyle },
     { t: 2000, kind: "transition", style: "cut", label: "", outMs: 0, cardMs: 3000, inMs: 540 },
     { t: 3300, kind: "zoom", durationMs: 1650, rect: { x: 500, y: 480, width: 920, height: 520 } },
     { t: 5540, kind: "land", rect: landTextLab.rect, text: landTextLab.message, lines: landTextLab.lines, lineCount: landTextLab.lineCount, concealColor: demoTheme.colors.backdrop, textStyle: landTextLab.textStyle },
@@ -184,7 +184,8 @@ function Lab({ timeline, kind, concealProof = false, concealDisabled = false }: 
   </AbsoluteFill>;
 }
 export const RailLab = () => <Lab timeline={railLabTimeline} kind="rail" />;
-export const CarryLab = () => <Lab timeline={carryLabTimeline} kind="carry" />;
+export const CarryLab = ({ concealProof = false, concealDisabled = false }: { concealProof?: boolean; concealDisabled?: boolean }) =>
+  <Lab timeline={carryLabTimeline} kind="carry" concealProof={concealProof} concealDisabled={concealDisabled} />;
 export const CalloutLab = () => <Lab timeline={calloutLabTimeline} kind="callout" />;
 
 export const CutLab = () => <Lab timeline={cutLabTimeline} kind="cut" />;

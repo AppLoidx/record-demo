@@ -1,7 +1,7 @@
 import type { Browser, Locator, Page } from "@playwright/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { carryFlights } from "../lib/carry";
-import { measureLandText } from "../lib/land-text";
+import { measureLandText, readCarryTextStyle } from "../lib/land-text";
 import { landBackground } from "../lib/land-scene";
 import { Storyboard } from "../lib/storyboard";
 import { WindowCapture, imageRect } from "../lib/window-capture";
@@ -43,7 +43,7 @@ afterEach(() => vi.restoreAllMocks());
 describe("multi-actor storyboard", () => {
   it.each([true, false])("land pairs with the first transition after carry (cut first: %s)", async (cutFirst) => {
     const { d, events } = setup();
-    const evaluate = vi.fn(async (fn: Function) => fn === landBackground ? undefined : fn !== measureLandText ? true : ({ rect: { x: 710, y: 420, width: 350, height: 32 },
+    const evaluate = vi.fn(async (fn: Function) => fn === landBackground ? undefined : fn === readCarryTextStyle ? { fontSize: 28, fontFamily: "Arial", fontWeight: "400", color: "black" } : fn !== measureLandText ? true : ({ rect: { x: 710, y: 420, width: 350, height: 32 },
       textStyle: { fontSize: 28, fontFamily: "Geist Sans", fontWeight: "400", color: "black" } }));
     const target = { waitFor: vi.fn(async () => {}), scrollIntoViewIfNeeded: vi.fn(async () => {}),
       boundingBox: vi.fn(async () => ({ x: 700, y: 400, width: 400, height: 60 })), evaluate } as unknown as Locator;
@@ -61,7 +61,7 @@ describe("multi-actor storyboard", () => {
     const { d, events } = setup();
     const text = { rect: { x: 710, y: 420, width: 350, height: 32 },
       textStyle: { fontSize: 28, fontFamily: "Geist Sans", fontWeight: "400", color: "rgb(0, 0, 0)" } };
-    const evaluate = vi.fn(async (fn: Function) => fn === measureLandText ? text : fn === landBackground ? undefined : true);
+    const evaluate = vi.fn(async (fn: Function) => fn === measureLandText ? text : fn === readCarryTextStyle ? text.textStyle : fn === landBackground ? undefined : true);
     const target = { waitFor: vi.fn(async () => {}), scrollIntoViewIfNeeded: vi.fn(async () => {}),
       boundingBox: vi.fn(async () => ({ x: 700, y: 400, width: 400, height: 60 })), evaluate } as unknown as Locator;
     await d.carry(target, "Message");
@@ -107,7 +107,7 @@ describe("multi-actor storyboard", () => {
     await d.transition("Sent back", async () => {});
     await d.land(target);
     expect(events.at(-1)).toMatchObject({ t: 3110, kind: "land", rect: { x: 700, y: 400, width: 400, height: 60 } });
-    expect(page.waitForTimeout).toHaveBeenLastCalledWith(600);
+    expect(page.waitForTimeout).toHaveBeenLastCalledWith(950);
   });
   it("records window durations and keeps capture running for their full sum", async () => {
     const { d, page, capture, events } = setup();

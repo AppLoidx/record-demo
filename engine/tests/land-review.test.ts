@@ -19,6 +19,13 @@ async function setup(html: string) {
 }
 const movedError = "land target moved after the scene change; scroll inside the cut action";
 describe("land preserves the incoming scene", () => {
+  it.each(["p", "input"])("records the actual %s source font size at lift", async (tag) => {
+    const { page, d, events } = await setup(tag === "input" ? '<input value="Message" style="font:24px Arial">' : '<p style="font:24px Arial">Message</p>');
+    try {
+      await d.carry(page.locator(tag), "Message");
+      expect(events.at(-1)).toMatchObject({ kind: "carry", textStyle: { fontSize: 24, fontFamily: "Arial" } });
+    } finally { await page.close(); }
+  });
   it.each([false, true])("rejects an offscreen target without scrolling (nested: %s)", async (nested) => {
     const { page, d, events } = await setup(nested
       ? '<div id="scroll" style="height:100px;overflow:auto"><div style="height:1200px"></div><p>Message</p></div>'

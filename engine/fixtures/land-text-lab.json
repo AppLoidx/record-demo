@@ -32,5 +32,11 @@
       "text": "funds"
     }
   ],
-  "lineCount": 2
+  "lineCount": 2,
+  "singleLine": {
+    "x": 772.3333333333334,
+    "y": 670,
+    "width": 375.3333333333333,
+    "height": 32
+  }
 }

@@ -82,7 +82,7 @@ describe("card-less cuts", () => {
     const flight = carryFlights(carryCutLabTimeline)[0]!;
     expect(flight.transition.style).toBe("cut");
     expect(flight.land.t).toBe(2540);
-    expect(carryTiming(flight)).toMatchObject({ incomingMs: 2000, arrivalMs: 2540, revealEndMs: 2720 });
+    expect(carryTiming(flight)).toMatchObject({ incomingMs: 2000, flightStartMs: 2540, arrivalMs: 3240, revealEndMs: 3490 });
     expect(flight.targetTimeMs).toBe(5540);
     const source = { x: 100, y: 100, width: 400, height: 40 };
     const target = { x: 800, y: 600, width: 300, height: 30 };
@@ -92,11 +92,11 @@ describe("card-less cuts", () => {
       expect(state.rect.x).toBeGreaterThanOrEqual(source.x);
       expect(state.rect.x).toBeLessThanOrEqual(target.x);
     }
-    expect(carryMotion(flight, 2540, source, target, dock)).toMatchObject({ rect: target, scale: 1, opacity: 1 });
+    expect(carryMotion(flight, 3240, source, target, dock)).toMatchObject({ rect: target, scale: 1, opacity: 1 });
     const cameraPath = createSceneCameraPath(carryCutLabTimeline, 60, 2200, 1237.5);
     expect(cameraPath.atFrame(5540 * 60 / 1000).scale).toBeGreaterThan(cameraPath.atFrame(2000 * 60 / 1000).scale);
     const html = renderToStaticMarkup(createElement(Carry, { flight, timeline: carryCutLabTimeline, cameraPath, fps: 60,
-      timeMs: 2540, width: 2560, height: 1440, screenOrigin: { x: 0, y: 0 } }));
+      timeMs: 3240, width: 2560, height: 1440, screenOrigin: { x: 0, y: 0 } }));
     expect(html).toContain(`font-size:${28 * 1.5 * cameraPath.atFrame(332.4).scale}px`);
   });
   it("lets both pointer snapshots dissolve with their screens", () => {

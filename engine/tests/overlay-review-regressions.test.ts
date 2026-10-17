@@ -99,7 +99,7 @@ describe("review regressions", () => {
     expect(single).toContain("border-radius:999px");
   });
 
-  it.each([8300, 8700])("conceals only the incoming destination before arrival and removes the cover after reveal at %sms", (time) => {
+  it.each([8300, 9470])("conceals only the incoming destination before arrival and removes the cover after reveal at %sms", (time) => {
     clock.frame = time * 60 / 1000;
     const html = renderToStaticMarkup(createElement(DemoVideo, { timeline, videoSrc: "test.mp4", windowChrome: "macos" }));
     expect(html).toContain("background:#183A42");

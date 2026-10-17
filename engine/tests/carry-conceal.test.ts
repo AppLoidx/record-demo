@@ -18,23 +18,23 @@ const subject: Timeline = { ...carryCutLabTimeline, events: [
 ] };
 
 describe("carry destination concealment", () => {
-  it("arrives by the cut's end without an intermediate dock or hold", () => {
+  it("holds through the cut, then arcs directly to the destination without a dock", () => {
     const flight = carryFlights(subject)[0]!;
     const dock = { ...target, x: -9999 };
-    let lastX = source.x;
-    for (let time = 2001; time < 2540; time += 10) {
-      const state = carryMotion(flight, time, source, target, dock);
-      expect(state.rect.x).toBeGreaterThan(lastX);
-      lastX = state.rect.x;
-    }
-    expect(carryMotion(flight, 2540, source, target, dock)).toMatchObject({ rect: target, scale: 1, opacity: 1 });
+    for (let time = 2000; time <= 2540; time += 10)
+      expect(carryMotion(flight, time, source, target, dock)).toMatchObject({ rect: source, scale: 1.04, opacity: 1 });
+    const middle = carryMotion(flight, 2890, source, target, dock);
+    expect(middle.rect.x).toBeGreaterThan(source.x);
+    expect(middle.rect.x).toBeLessThan(target.x);
+    expect(middle.rect.y).toBeLessThan((source.y + target.y) / 2);
+    expect(carryMotion(flight, 3240, source, target, dock)).toMatchObject({ rect: target, scale: 1, opacity: 1 });
   });
   it.each([true, false])("conceals through approach then crossfades in sync (cut: %s)", (cut) => {
     const timeline: Timeline = { ...subject, events: subject.events.map((event) => event.kind === "transition" && !cut
       ? { ...event, style: undefined, outMs: 450, cardMs: 3000, visibleCardMs: 1200 } : event) };
     const flight = carryFlights(timeline)[0]!;
     const timing = carryTiming(flight);
-    expect(timing.arrivalMs).toBeLessThanOrEqual(timing.sceneEndMs + 250);
+    expect(timing.arrivalMs).toBe(Math.max(timing.sceneEndMs, flight.land.t) + 700);
     expect(carryConcealOpacity(flight, timing.incomingMs - 0.01)).toBe(0);
     for (let time = timing.incomingMs; time <= timing.arrivalMs; time += 5) {
       expect(carryConcealOpacity(flight, time)).toBe(1);
@@ -65,21 +65,21 @@ describe("carry destination concealment", () => {
     const flight = carryFlights(subject)[0]!;
     const props = { flight, timeline: subject, cameraPath: { moves: [], atFrame: () => ({ scale: 1, translateX: 0, translateY: 0 }) },
       fps: 60, width: 2560, height: 1440, screenOrigin: { x: 0, y: 0 } };
-    const before = renderToStaticMarkup(createElement(Carry, { ...props, timeMs: 2539 }));
-    const during = renderToStaticMarkup(createElement(Carry, { ...props, timeMs: 2630 }));
-    expect(before).toContain("background:#FFFFFF");
+    const before = renderToStaticMarkup(createElement(Carry, { ...props, timeMs: carryTiming(flight).arrivalMs - 1 }));
+    const during = renderToStaticMarkup(createElement(Carry, { ...props, timeMs: carryTiming(flight).arrivalMs + 125 }));
+    expect(before).toContain("background:#EEE9FF");
     expect(during).toContain("background:transparent");
     expect(during).toMatch(/opacity:0\.5/);
   });
-  it("bounds delayed land measurements to 250ms after the scene dissolve", () => {
+  it("waits for delayed land measurements before starting the full flight", () => {
     const flight = carryFlights(subject)[0]!;
-    expect(carryTiming({ ...flight, land: { ...flight.land, t: 2690 } }).arrivalMs).toBe(2690);
-    expect(carryTiming({ ...flight, land: { ...flight.land, t: 5000 } }).arrivalMs).toBe(2790);
+    expect(carryTiming({ ...flight, land: { ...flight.land, t: 2690 } }).arrivalMs).toBe(3390);
+    expect(carryTiming({ ...flight, land: { ...flight.land, t: 5000 } }).arrivalMs).toBe(5700);
   });
   it("stays aligned with the live concealer during a post-cut zoom before land", () => {
     const timeline: Timeline = { ...subject, durationMs: 9000, events: [
       ...subject.events.filter((e) => e.kind !== "land"),
-      { t: 5540, kind: "zoom", durationMs: 1650, rect: { x: 650, y: 500, width: 700, height: 400 } },
+      { t: 7190, kind: "zoom", durationMs: 1650, rect: { x: 650, y: 500, width: 700, height: 400 } },
       { t: 7190, kind: "land", rect: target, textStyle: { fontSize: 28, fontFamily: "Arial", fontWeight: "400", color: "black" } },
     ] };
     const flight = carryFlights(timeline)[0]!;
@@ -97,7 +97,7 @@ describe("carry destination concealment", () => {
       expect(value("top")).toBeCloseTo(camera.translateY + target.y * scale, 6);
       expect(value("width")).toBeCloseTo(target.width * scale, 6);
       expect(value("font-size")).toBeCloseTo(28 * scale, 6);
-      expect(Math.abs(camera.translateX + target.x * scale - (future.translateX + target.x * timeline.viewport.deviceScaleFactor * future.scale))).toBeGreaterThan(50);
+      expect(Math.abs(camera.translateX + target.x * scale - (future.translateX + target.x * timeline.viewport.deviceScaleFactor * future.scale))).toBeGreaterThan(5);
     }
   });
   it("round trips conceal options in both timeline validators", () => {

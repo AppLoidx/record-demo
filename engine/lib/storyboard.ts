@@ -1,5 +1,5 @@
 import { snapshotLandScene, landSceneIsUnchanged, landBackground, type LandSceneSnapshot } from "./land-scene";
-import { measureLandText } from "./land-text";
+import { measureLandText, readCarryTextStyle } from "./land-text";
 import { calloutSide } from "./callout";
 import { createSceneCameraPath } from "./scene-camera";
 import {
@@ -339,7 +339,8 @@ export class Storyboard {
       padding: 0, scroll: "nearest", containment: "viewport",
       missingBoxMessage: "Cannot carry an element without a bounding box",
     });
-    this.events.push({ t: this.now(), kind: "carry", rect, text });
+    const textStyle = typeof target.evaluate === "function" ? await target.evaluate(readCarryTextStyle) : undefined;
+    this.events.push({ t: this.now(), kind: "carry", rect, text, ...(textStyle ? { textStyle } : {}) });
     await this.page.waitForTimeout(demoTheme.carry.liftMs);
   }
 
@@ -371,7 +372,7 @@ export class Storyboard {
       ...(options.text === undefined ? {} : { text: options.text }),
       ...(options.conceal === undefined ? {} : { conceal: options.conceal }),
       concealColor });
-    await this.page.waitForTimeout(demoTheme.carry.landMs);
+    await this.page.waitForTimeout(demoTheme.carry.glideMs + demoTheme.carry.dissolveMs);
     return { rect: text?.rect ?? rect, lineCount: text?.lineCount ?? 1, lines: text?.lines };
   }
 

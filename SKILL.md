@@ -236,15 +236,34 @@ keep the clip legible:
 
 - The rail replaces the role badge while visible and stays above chapter cards. Indices
   start at 0; allow 520ms for an advance, or 1720ms for a return arc, landing and fade.
-- Carry/land locators should frame the message text. Settle the camera first, then
-  `await d.carry(...)`, `await d.cut(...)` (or a chapter `d.transition(...)`), and `await d.land(...)` in sequence.
-  Cut and chapter carries glide continuously from lift end to the destination, arriving by the end of the incoming dissolve or within 250ms after it. Land on a text locator
-  covering the carried words: the engine captures its text range and font metrics for the final aligned crossfade.
-  For an already zoomed landing, issue `d.zoomTo(...)` inside the cut/transition action and
-  let it settle there; call `land()` immediately after the scene change. If a camera move
-  continues afterward, the chip follows the live camera during its reveal.
-  Carry waits for its 300ms lift; land waits for its 600ms glide and dissolve. Elastic
-  cards keep the chip visible while hidden load time is cut.
+- Carry/land locators should frame the message text. Author the sequence as:
+  **carry at submit → cut/transition → land → railBack → caption**. For example:
+
+  ```ts
+  await d.carry(sourceText, message);
+  await d.click(submitButton);
+  await d.cut(async (page) => {
+    await page.goto(customerUrl);
+    await d.settle(destinationText);
+    // Scroll and any destination zoom must settle inside this action.
+  });
+  await d.land(destinationText, { text: message });
+  d.railBack(3, 2);
+  await d.hold(1720);
+  d.caption("Review the updated answer");
+  ```
+
+  Carry lifts for 300ms (scale 1→1.04, growing shadow), then holds at that exact position
+  above both scene layers through the whole dissolve. Card transitions use the same hold.
+  Flight starts only after both the dissolve and the land cue, follows one gently upward-bowed
+  700ms arc with the theme camera easing, then reveals the native text over 250ms. There is no
+  intermediate landing or resting dock. Awaited `land()` includes flight and reveal (950ms),
+  so subsequent rail/caption calls follow them; the engine does not couple those effects.
+  The filled, fully rounded pill uses opaque theme accent tint, medium ink, padding and soft
+  elevation. Source font metrics are captured at carry; destination Range/font metrics keep
+  the final crossfade aligned. Put destination zooms inside the scene-change action and let
+  them settle there. A later land cue simply extends the hold; the chip follows the live camera
+  during flight/reveal if the camera continues moving. Elastic cards remove hidden load time.
 
 - Window content must be the real artifact: render the product's own template (for example
   the real email renderer with demo inputs). Never hand-write a look-alike.
@@ -372,8 +391,10 @@ and the requested incoming duration. Regular chapter transitions remain availabl
 Use `await d.land(destinationText, { conceal?: boolean, concealColor?: string })` immediately after
 `await d.cut(...)` or `await d.transition(...)`. Concealment defaults to true for both styles. The
 renderer covers the destination from the first incoming frame until the chip arrives, then crossfades
-the chip glyphs into the real text over 180ms while the cover fades away. The chip follows one continuous
-route from lift end; chapter cards no longer provide a resting dock.
+the chip glyphs into the real text over 250ms while its tint, shadow and the cover fade away.
+The pill holds through the scene change, then takes one 700ms arc after the later of dissolve end
+and the land cue. Chapter cards do not add an intermediate landing. Material contracts to the exact
+line boxes at arrival, preserving adjacent status text when a message wraps.
 
 The cover uses the target's first non-transparent computed background color, walking up its ancestors,
 and falls back to the theme surface (white). Supply an opaque `concealColor` to override it,

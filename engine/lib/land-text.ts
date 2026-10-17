@@ -82,3 +82,10 @@ export function measureLandText(element: Element, search: string | undefined) {
   }
   throw new Error(`land text ${JSON.stringify(search)} was not found inside the locator with a visible client rect`);
 }
+
+/** Also works for input/textarea sources, whose words are not descendant text nodes. */
+export function readCarryTextStyle(element: Element) {
+  const style = getComputedStyle(element);
+  return { fontSize: parseFloat(style.fontSize), fontFamily: style.fontFamily,
+    fontWeight: style.fontWeight, color: style.color };
+}

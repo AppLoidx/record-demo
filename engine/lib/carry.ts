@@ -42,14 +42,14 @@ function mixRect(a: Rect, b: Rect, amount: number): Rect {
   return { x: a.x + (b.x - a.x) * amount, y: a.y + (b.y - a.y) * amount,
     width: a.width + (b.width - a.width) * amount, height: a.height + (b.height - a.height) * amount };
 }
-/** Presentation-clock timing: travel never docks, and reveal starts only after arrival. */
+/** Presentation-clock phases: lift, hold through the scene, one arc, then reveal. */
 export function carryTiming(flight: CarryFlight) {
-  const glideStartMs = flight.carry.t + t.liftMs;
+  const liftEndMs = flight.carry.t + t.liftMs;
   const incomingMs = flight.transition.t + flight.transition.outMs + flight.transition.cardMs;
   const sceneEndMs = incomingMs + flight.transition.inMs;
-  const arrivalMs = Math.max(glideStartMs + 1, sceneEndMs,
-    Math.min(flight.land.t, sceneEndMs + t.maxArrivalDelayMs));
-  return { glideStartMs, incomingMs, sceneEndMs, arrivalMs, revealEndMs: arrivalMs + t.dissolveMs };
+  const flightStartMs = Math.max(liftEndMs, sceneEndMs, flight.land.t);
+  const arrivalMs = flightStartMs + t.glideMs;
+  return { liftEndMs, flightStartMs, incomingMs, sceneEndMs, arrivalMs, revealEndMs: arrivalMs + t.dissolveMs };
 }
 
 /** Cut incoming camera is frozen at scene end; afterward use the live source clock. */
@@ -63,12 +63,16 @@ export function carryConcealOpacity(flight: CarryFlight, timeMs: number) {
   return 1 - p(timeMs - timing.arrivalMs, t.dissolveMs);
 }
 
-export function carryMotion(flight: CarryFlight, timeMs: number, source: Rect, target: Rect, _dock: Rect) {
+export function carryMotion(flight: CarryFlight, timeMs: number, source: Rect, target: Rect, _dock?: Rect) {
   const age = timeMs - flight.carry.t;
   const lift = p(age, t.liftMs);
   const timing = carryTiming(flight);
-  const travel = p(timeMs - timing.glideStartMs, timing.arrivalMs - timing.glideStartMs);
-  return { rect: mixRect(source, target, travel), landing: travel,
+  const travel = p(timeMs - timing.flightStartMs, t.glideMs);
+  const rect = mixRect(source, target, travel);
+  // A quadratic Bezier with a control point above the straight-line midpoint.
+  const bow = Math.min(t.arcMaxHeight, Math.hypot(target.x - source.x, target.y - source.y) * t.arcHeightRatio);
+  rect.y -= 2 * (1 - travel) * travel * bow;
+  return { rect, landing: travel, lift,
     scale: 1 + (t.liftScale - 1) * lift * (1 - travel),
     opacity: p(age, t.enterMs) * (1 - p(timeMs - timing.arrivalMs, t.dissolveMs)),
   };

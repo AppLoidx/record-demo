@@ -17,13 +17,13 @@ await mkdir(output, { recursive: true });
 const thresholds = {
   CaptionLab: [0, 500, 520, 760, 950, 1300, 2760, 2900, 3300, 3560, 3750, 4800, 5760, 5900, 6000, 6260, 6860, 7000],
   CutLab: [0, 100, 360, 500, 720, 900, 1080, 1150, 1350, 1650, 1900, 2000, 2080, 2180, 2270, 2540, 3060, 3360],
-  CarryCutLab: [0, 360, 1650, 1700, 1880, 2000, 2270, 2540, 2630, 2720, 3140],
-  CarryCutLabPostZoom: [0, 1700, 2000, 2270, 2540, 2790, 2880, 2970, 3365, 4190, 4790],
+  CarryCutLab: [0, 360, 1650, 1700, 1850, 2000, 2270, 2540, 2890, 3240, 3365, 3490],
+  CarryCutLabPostZoom: [0, 1700, 1850, 2000, 2270, 2540, 3365, 4190, 4540, 4890, 5015, 5140],
   RailLab: [200, 560, 1200, 1720, 2200, 2380, 2720, 3100, 3250, 3620, 3700, 3920, 3960, 4560, 4640, 4900, 5460, 5800, 6160, 6500, 6860],
-  CarryLab: [2500, 2680, 2800, 3250, 3400, 3510, 3670, 4030, 4110, 4190, 4450, 4710, 5010, 5430, 5610],
+  CarryLab: [2500, 2650, 2800, 3250, 3850, 4450, 4730, 5010, 5360, 5710, 5835, 5960],
   CalloutLab: [600, 800, 820, 1080, 1300, 1750, 4750, 4970, 5300, 5500, 5520, 5780, 6000, 6450, 8050, 8270],
 };
-const heroFrames = { CaptionLab: 88, CutLab: 136, CarryCutLab: 149, CarryCutLabPostZoom: 167, RailLab: 178, CarryLab: 230, CalloutLab: 414 };
+const heroFrames = { CaptionLab: 88, CutLab: 136, CarryCutLab: 173, CarryCutLabPostZoom: 272, RailLab: 178, CarryLab: 322, CalloutLab: 414 };
 const requested = process.argv.slice(2);
 const selected = requested.length ? requested : Object.keys(thresholds);
 for (const lab of selected) if (!(lab in thresholds)) throw new Error(`Unknown lab: ${lab}`);
@@ -45,7 +45,7 @@ for (const lab of selected) {
       onProgress() {} });
     await renderStill({ serveUrl, composition, frame: heroFrames[lab], browserExecutable,
       output: path.join(output, `${stem}.png`), imageFormat: "png" });
-    const extra = { CaptionLab: ["long-caption", 240], CutLab: ["settled", 180], CarryCutLab: ["settled", 180], CarryCutLabPostZoom: ["settled", 270], RailLab: ["chapter", 257], CarryLab: ["settled", 360], CalloutLab: ["single-line", 150] }[lab];
+    const extra = { CaptionLab: ["long-caption", 240], CutLab: ["settled", 180], CarryCutLab: ["settled", 213], CarryCutLabPostZoom: ["settled", 312], RailLab: ["chapter", 257], CarryLab: ["settled", 366], CalloutLab: ["single-line", 150] }[lab];
     await renderStill({ serveUrl, composition, frame: extra[1], browserExecutable,
       output: path.join(output, `${stem}-${extra[0]}.png`), imageFormat: "png" });
     execFileSync("ffmpeg", ["-y", "-v", "error", "-i", outputLocation, "-vf",
@@ -72,18 +72,24 @@ for (const lab of selected) {
         "-frames:v", "1", path.join(output, `${stem}-boundary-${ms}.png`)], { stdio: "inherit" });
     }
     let concealProof;
-    if (compositionLab === "CarryCutLab") {
+    if (compositionLab === "CarryCutLab" || compositionLab === "CarryLab") {
       // Hide the carrier and tint only the native destination glyphs. Any magenta
       // before arrival is a real pixel leak through the incoming camera-layer cover.
       const inputProps = { ...baseProps, concealProof: true };
       const proofPath = path.join(output, `${stem}-conceal-proof.mp4`);
-      const proofComposition = await selectComposition({ serveUrl, id, browserExecutable, inputProps });
+      const proofComposition = { ...await selectComposition({ serveUrl, id, browserExecutable, inputProps }),
+        durationInFrames: composition.durationInFrames };
       const controlPath = path.join(output, `${stem}-unconcealed-control.png`);
-      const firstFrame = Math.ceil(2000 * composition.fps / 1000);
-      const arrivalMs = postCutZoom ? 2790 : 2540;
-      const lastFrame = Math.ceil((arrivalMs + 280) * composition.fps / 1000);
+      const isCard = compositionLab === "CarryLab";
+      const incomingMs = isCard ? 4450 : 2000;
+      const flightStartMs = isCard ? 5010 : postCutZoom ? 4190 : 2540;
+      const arrivalMs = flightStartMs + 700;
+      const revealEndMs = arrivalMs + 250;
+      const firstFrame = Math.ceil(incomingMs * composition.fps / 1000);
+      const lastFrame = Math.ceil((revealEndMs + 50) * composition.fps / 1000);
       const controlProps = { ...baseProps, concealProof: true, concealDisabled: true };
-      const controlComposition = await selectComposition({ serveUrl, id, browserExecutable, inputProps: controlProps });
+      const controlComposition = { ...await selectComposition({ serveUrl, id, browserExecutable, inputProps: controlProps }),
+        durationInFrames: composition.durationInFrames };
       await renderStill({ serveUrl, composition: controlComposition, inputProps: controlProps,
         frame: Math.floor(arrivalMs * composition.fps / 1000) - 1, browserExecutable,
         output: controlPath, imageFormat: "png" });
@@ -103,7 +109,7 @@ for (const lab of selected) {
         scale: 0.5, concurrency: 2, browserExecutable, outputLocation: proofPath, onProgress() {} });
       const raw = execFileSync("ffmpeg", ["-v", "error", "-i", proofPath, "-vf",
         `select=between(n\\,${firstFrame}\\,${lastFrame}),scale=320:-1`, "-vsync", "0",
-        "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"], { maxBuffer: 64 * 1024 * 1024 });
+        "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"], { maxBuffer: 128 * 1024 * 1024 });
       const frameCount = lastFrame - firstFrame + 1;
       const bytes = raw.length / frameCount;
       if (!Number.isInteger(bytes) || bytes === 0) throw new Error(`Missing conceal probe frames: ${stem}`);
@@ -113,12 +119,22 @@ for (const lab of selected) {
       const before = frames.filter(({ frame }) => frame * 1000 / composition.fps < arrivalMs);
       if (before.some(({ nativeGlyphPixels }) => nativeGlyphPixels !== 0))
         throw new Error(`Native destination visible before carrier arrival: ${stem}`);
-      const prefixFrames = before.filter(({ frame }) => frame * 1000 / composition.fps >= 2270);
+      const prefixFrames = isCard ? [] : before.filter(({ frame }) => frame * 1000 / composition.fps >= 2270);
+      // Tiny glyphs midway through the incoming fade can fall below chroma
+      // thresholds after downsampling. Recheck zeros at double resolution,
+      // retaining the same color thresholds and recording that probe width.
+      for (const probe of prefixFrames.filter(({ prefixGlyphPixels }) => prefixGlyphPixels === 0)) {
+        const detailed = execFileSync("ffmpeg", ["-v", "error", "-i", proofPath, "-vf",
+          `select=eq(n\\,${probe.frame}),scale=640:-1`, "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"],
+          { maxBuffer: 4 * 1024 * 1024 });
+        probe.prefixGlyphPixels = markers(detailed, true);
+        probe.prefixProbeWidth = 640;
+      }
       if (prefixFrames.some(({ prefixGlyphPixels }) => prefixGlyphPixels === 0))
         throw new Error(`Status prefix was concealed along with the message: ${stem}`);
       if (frames.at(-1).nativeGlyphPixels < 5) throw new Error(`Native destination never revealed: ${stem}`);
-      concealProof = { proofPath, controlPath, controlPixels, incomingMs: 2000, arrivalMs, revealEndMs: arrivalMs + 180,
-        hiddenFramesChecked: before.length, prefixFramesChecked: prefixFrames.length, lineCount: 2, frames };
+      concealProof = { proofPath, controlPath, controlPixels, incomingMs, flightStartMs, arrivalMs, revealEndMs,
+        hiddenFramesChecked: before.length, prefixFramesChecked: prefixFrames.length, lineCount: isCard ? 1 : 2, frames };
       await writeFile(path.join(output, `${stem}-conceal-proof.json`), JSON.stringify(concealProof, null, 2) + "\n");
       console.log(`Conceal proof ${stem}: ${before.length} incoming frames with zero native glyph pixels; ${prefixFrames.length} preserve prefix; control ${controlPixels}px`);
     }

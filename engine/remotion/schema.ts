@@ -13,12 +13,14 @@ const spotlightRectSchema = rectSchema.extend({
   height: z.number().nonnegative(),
 });
 
+const carryTextSchema = z.object({ fontSize: z.number().positive(), fontFamily: z.string(), fontWeight: z.string(), color: z.string() });
+
 const timelineEventSchema = z.discriminatedUnion("kind", [
   z.object({ t: z.number(), kind: z.literal("rail"), steps: z.array(z.string()).min(1), active: z.number().int().nonnegative() }),
   z.object({ t: z.number(), kind: z.literal("rail-back"), from: z.number().int().nonnegative(), to: z.number().int().nonnegative() }),
   z.object({ t: z.number(), kind: z.literal("rail-off") }),
-  z.object({ t: z.number(), kind: z.literal("carry"), rect: spotlightRectSchema, text: z.string() }),
-  z.object({ t: z.number(), kind: z.literal("land"), rect: spotlightRectSchema, text: z.string().optional(), lineCount: z.number().int().positive().optional(), lines: z.array(z.object({ rect: spotlightRectSchema, text: z.string() })).min(1).optional(), conceal: z.boolean().optional(), concealColor: z.string().optional(), textStyle: z.object({ fontSize: z.number().positive(), fontFamily: z.string(), fontWeight: z.string(), color: z.string() }).optional() }),
+  z.object({ t: z.number(), kind: z.literal("carry"), rect: spotlightRectSchema, text: z.string(), textStyle: carryTextSchema.optional() }),
+  z.object({ t: z.number(), kind: z.literal("land"), rect: spotlightRectSchema, text: z.string().optional(), lineCount: z.number().int().positive().optional(), lines: z.array(z.object({ rect: spotlightRectSchema, text: z.string() })).min(1).optional(), conceal: z.boolean().optional(), concealColor: z.string().optional(), textStyle: carryTextSchema.optional() }),
   z.object({ t: z.number(), kind: z.literal("callout"), rect: spotlightRectSchema,
     text: z.string(), holdMs: z.number().nonnegative(), side: z.enum(["left", "right", "top", "bottom"]) }),
   z.object({ t: z.number(), kind: z.literal("role"), label: z.string() }),
