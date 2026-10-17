@@ -65,7 +65,7 @@ export function outroTitleMotion(title: ReturnType<typeof parseOutroTitle>, dura
 
 export function outroScreenMotion(ageMs: number) {
   const t = clamp(ageMs / demoTheme.outro.screenDurationMs);
-  // Smooth endpoints; at 60fps the 2400ms fade changes opacity by at most 0.97% per frame.
+  // Smooth endpoints; the UI is fully gone before the title starts (titleDelayMs), so type never sits on ghosted UI.
   const progress = t * t * (3 - 2 * t);
   return {
     scale: 1 + (demoTheme.outro.recedeScale - 1) * progress,

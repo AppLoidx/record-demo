@@ -288,10 +288,10 @@ export const demoTheme = {
   },
   outro: {
     enterDurationMs: 600,
-    screenDurationMs: 2400,
+    screenDurationMs: 1000,
     titleDelayMs: 1000,
     recedeScale: 0.84,
-    screenOpacity: 0.07,
+    screenOpacity: 0,
     holdMs: 600,
     titleSizeRatio: 64 / 2_560,
   },

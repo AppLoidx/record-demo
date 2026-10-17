@@ -68,14 +68,16 @@ describe("kinetic outro slate", () => {
     expect(outroTitleMotion(parseOutroTitle("Done"), 2400, 2000).fills).toEqual([]);
   });
 
-  it("recedes continuously to chapter context with no adjacent 60fps opacity jump above 1%", () => {
+  it("clears the screen fully before the title, with a smooth 60fps fade", () => {
     expect(outroScreenMotion(0)).toEqual({ scale: 1, opacity: 1, translateX: 0 });
-    expect(outroScreenMotion(demoTheme.outro.screenDurationMs / 2).opacity).toBeCloseTo(0.535);
-    expect(outroScreenMotion(demoTheme.outro.screenDurationMs)).toEqual({ scale: 0.84, opacity: 0.07, translateX: 0 });
+    expect(outroScreenMotion(demoTheme.outro.screenDurationMs / 2).opacity).toBeCloseTo(0.5);
+    expect(outroScreenMotion(demoTheme.outro.screenDurationMs)).toEqual({ scale: 0.84, opacity: 0, translateX: 0 });
+    // Title type must never sit on ghosted UI.
+    expect(demoTheme.outro.screenDurationMs).toBeLessThanOrEqual(demoTheme.outro.titleDelayMs);
     let previous = 1;
     for (let frame = -1; frame <= 240; frame++) {
       const current = outroScreenMotion(frame * 1000 / 60).opacity;
-      expect(Math.abs(current - previous)).toBeLessThanOrEqual(0.01);
+      expect(Math.abs(current - previous)).toBeLessThanOrEqual(0.03);
       previous = current;
     }
   });
