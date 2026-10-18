@@ -54,23 +54,50 @@ Frame 0 is already the money shot.
 
 **4. Critic loop.**
 - Builder and critic are always separate agents. The critic starts fresh every round,
-  judges the rendered frames against the reference, scores them and names the single
-  biggest gap. The builder fixes only that.
+  judges the rendered frames against the reference, scores them, names the biggest gap
+  and ranks every other finding. The builder fixes all of them in the next take (biggest
+  first) and keeps a running list of recurring issues so none re-surfaces. Fixing one gap
+  per take stalls: each fresh critic names a new top gap while the rest keep dragging
+  every take down.
 - Blind test: mix your frames with the reference's. If a judge can tell which is which, it
   is not done.
 - Wow gate: split the film into 3 s windows. Every one must be a yes.
 
-**5. Sound.** One real track, lined up so its own final hit lands on the end card and
-played as one continuous piece; cut on its beat. A clean, real sound on every small move,
-with the hero moments clearly audible. Not supported yet: the engine renders muted, and the
-track must come from the user (licensing). Until then, ship silent and say so.
+**5. Sound.** You cannot hear: measure everything, never judge by feel. Install `ffmpeg`
+and `librosa` first if missing. The engine renders muted, so sound is an `ffmpeg` pass on
+the exported MP4.
+
+- **Music.** Only a track the user supplies, or one under the free Mixkit license. State the
+  source and license. Never generate music or sound effects programmatically.
+- **Beat grid.** Detect beats with `librosa`. It sometimes locks onto off-beats: plot the
+  waveform below 120 Hz, overlay the beat grid, zoom into a few bars. If kick drums miss the
+  grid, shift the whole grid.
+- **Sync.** Put major moves (scene changes, titles) on beats. Change the animation timing if
+  you can; otherwise shift where the music starts. Let the track's own final hit land on the
+  end card, played as one continuous piece.
+- **Effects.** One real, pre-made file per scene change and per meaningful move: whoosh for
+  motion, pop for elements appearing, click for presses, keyboard for typing. Source order:
+  1. The project's own sound library (for example the one shipped with HyperFrames).
+  2. Otherwise Openverse (`https://api.openverse.org`), only results with
+     `license=cc0,by,pdm` and `source=freesound,jamendo`. One search per sound type
+     (anonymous limit: 200 searches a day). Pick the best fit for the action in each
+     frame, `curl` the file by its URL into `sfx/`, and copy each result's `attribution`
+     field verbatim into `credits.txt`.
+  3. Nothing fits: ask the user.
+- **Levels.** Voice-over (if any) loudest, with music ducked under speech; effects louder
+  than music. Target about -16 LUFS integrated and true peak below -4 dBFS, so AAC and mono
+  phone speakers do not clip. Measure the exported MP4 with `ffmpeg`'s `ebur128` filter,
+  never the WAV.
+- **Proof.** For every effect cue, extract one frame before and after it from the exported
+  MP4 with `ffmpeg` and plot the waveform next to them. Then give the user five timestamps
+  to check on headphones. Never claim the sound is good.
 
 **6. Measure, then watch like the client.** Render at 60 fps and measure:
 
 ```bash
 ffmpeg -i out/<name>-16x9.mp4 -vf freezedetect=n=0.001:d=0.5 -an -f null - 2>&1 | grep freeze_   # frozen frames
 ffmpeg -i out/<name>-16x9.mp4 -vf blackdetect=d=0.05:pix_th=0.10 -an -f null - 2>&1 | grep black_  # black frames
-ffmpeg -i out/<name>-16x9.mp4 -af ebur128 -f null - 2>&1 | tail -12                                 # loudness (when audio exists)
+ffmpeg -i out/<name>-16x9.mp4 -af ebur128=peak=true -f null - 2>&1 | tail -12                       # loudness + true peak (exported MP4)
 ```
 
 One-frame pops: compare adjacent frames in the frame sheets and at every transition boundary
