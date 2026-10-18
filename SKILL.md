@@ -29,6 +29,11 @@ re-pace and re-record.
 
 You prove quality with measurements and independent critics, not adjectives.
 
+**Who builds the motion.** Motion design and every line of motion code (overlays, camera,
+transitions, timing, captions, cursor, end card, storyboards) are built by Opus 5.5 end to end:
+the driver or Opus 5.5 subagents. Never delegate motion work to another model. Non-motion
+plumbing (for example demo mock data) may go elsewhere.
+
 ## Quality process
 
 **1. Reference -> numbers.** Read the reference frame by frame and turn it into numbers: cut
