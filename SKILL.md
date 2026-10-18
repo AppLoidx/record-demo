@@ -68,7 +68,10 @@ and `librosa` first if missing. The engine renders muted, so sound is an `ffmpeg
 the exported MP4.
 
 - **Music.** Only a track the user supplies, or one under the free Mixkit license. State the
-  source and license. Never generate music or sound effects programmatically.
+  source and license. Never generate music or sound effects programmatically. When the music
+  must have no voice, prove it: split with Demucs (`python -m demucs --two-stems=vocals`) and
+  require the vocal stem about 30 dB or more below the instruments, outside silent passages
+  (Mixkit lists no vocals field).
 - **Beat grid.** Detect beats with `librosa`. It sometimes locks onto off-beats: plot the
   waveform below 120 Hz, overlay the beat grid, zoom into a few bars. If kick drums miss the
   grid, shift the whole grid.
@@ -328,6 +331,15 @@ keep the clip legible:
   (~1s on submits) in the mock or a `context.route` delay so the product's own spinners and
   disabled states show; never draw a fake loader.
 
+- `d.step(text, ...)` captions at its start. When a move must land before its caption (a carry
+  landing, a reveal), make the move between steps, then start the captioned step.
+- Advance the rail inside the `d.cut` action that shows the new actor, so it moves as the new
+  scene resolves rather than ahead of it; after a drawer closes, re-frame first, then advance.
+- Land app switches already framed: `zoomTo` inside the cut action plus ~1.8 s of hidden wait;
+  the dissolve then reveals a settled shot instead of a wide frame that pushes in.
+- Captions name the decision on screen ("The answer is too vague: reject it and say what to
+  fix"), one per meaningful click in the step being taught; never restate a visible label.
+
 ## Recording local apps (dev servers, mocks)
 
 - **Warm every route in `seed`** (visit each URL once, `waitForLoadState("load")` plus about
@@ -405,6 +417,13 @@ keep the clip legible:
 | Spotlight cutout off its target | Rect raced a smooth scroll - measureTarget's stability loop should hold; if it recurs, raise its timeout. |
 | Words cut mid-letter at crop edge | `zoomTo(locator, { padding: 120 })` for modals. |
 | Zoom clips content off-frame | `maximumScale` taste issue (1.45 works), not a clamp bug. |
+| Recording hits the 300 s Playwright timeout mid-film | A `zoomTo` target vanished after it was checked (e.g. a queue row that moves to another tab once its turn changes); `waitFor` then blocks forever. Frame on stable anchors (headings, tabs, the detail card) and visibility-check every optional part. |
+| A drawer opens cropped, then the camera pans late to catch it | Frame the page out to the viewport edge the drawer slides from (inject a 2px `position:fixed` marker there and include it in the framing) so the drawer lands inside the shot. |
+| WSL clock steps not corrected (drift of ~2-3 s by mid-film) | Steps vary 1.3-2.5 s; the runner treats any capture gap over 1.2 s as a step. Normal 30 fps spacing is 0.033 s. |
+| Two apps show different times or due dates | Force one zone before capture (`newCDPSession(page)` -> `Emulation.setTimezoneOverride {timezoneId:"UTC"}`) and author every mock timestamp in UTC. |
+| Mock module fails to load in the recorder (`import.meta` outside a module) | Playwright loads storyboard imports as CommonJS: use absolute paths, not `import.meta.url`. |
+| Watching a background recorder: the PID exits instantly | `setsid nohup` leaves a wrapper shell; take the PID of the `node record.mjs` process itself (`pgrep -f '[n]ode record.mjs --script .*<name>' \| tail -1`). |
+| Briefs/logs gone after a VM reboot | `/tmp` is wiped; keep briefs and logs in the demo folder. |
 
 ## Verify engine changes
 
