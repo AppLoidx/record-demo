@@ -12,6 +12,7 @@ const everyEventTimeline: Timeline = {
   events: [
     { t: 0, kind: "cursor", x: 120, y: 240 },
     { t: 250, kind: "click", x: 120, y: 240 },
+    { t: 300, kind: "type", durationMs: 150, chars: 3 },
     { t: 500, kind: "caption", text: "Open settings", durationMs: 800 },
     {
       t: 1_000,
@@ -39,6 +40,13 @@ function propsFor(timeline: unknown) {
 }
 
 describe("demoVideoSchema", () => {
+  it.each([{ durationMs: -1, chars: 1 }, { durationMs: 1, chars: -1 }, { durationMs: 1, chars: 1.5 }])(
+    "rejects invalid typing measurements %j in both schemas", (measurement) => {
+      const timeline = { ...everyEventTimeline, events: [{ t: 0, kind: "type", ...measurement }] };
+      expect(() => parseTimeline(JSON.stringify(timeline))).toThrow();
+      expect(demoVideoSchema.safeParse(propsFor(timeline)).success).toBe(false);
+    },
+  );
   it.each([undefined, 0, 725, 2_000])(
     "round-trips transition visibleCardMs %s through both schemas",
     (visibleCardMs) => {

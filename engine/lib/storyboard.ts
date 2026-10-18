@@ -710,6 +710,7 @@ export class Storyboard {
    * after word boundaries.
    */
   async type(text: string, baseDelayMs = 55) {
+    const t = this.now();
     for (let index = 0; index < text.length; index += 1) {
       const character = text[index]!;
       await this.page.keyboard.type(character);
@@ -718,6 +719,7 @@ export class Storyboard {
       if (" .@-_".includes(character)) delay += baseDelayMs * 0.8;
       await this.page.waitForTimeout(delay);
     }
+    this.events.push({ t, kind: "type", durationMs: Math.max(0, this.now() - t), chars: text.length });
   }
 
   /**

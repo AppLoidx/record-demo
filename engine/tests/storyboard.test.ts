@@ -561,3 +561,24 @@ describe("Storyboard motion recording", () => {
     });
   });
 });
+
+
+describe("Storyboard.type", () => {
+  afterEach(() => vi.restoreAllMocks());
+  it("records measured elapsed time and character count, including keyboard latency", async () => {
+    let time = 100;
+    vi.spyOn(performance, "now").mockImplementation(() => time);
+    const page = {
+      keyboard: { type: vi.fn(async () => { time += 12; }) },
+      waitForTimeout: vi.fn(async (delay: number) => { time += delay; }),
+    };
+    const d = new Storyboard("typing", page as unknown as Page, {
+      width: 1920, height: 1080, deviceScaleFactor: 1.5,
+    });
+    await d.type("a b");
+    expect(page.keyboard.type.mock.calls).toHaveLength(3);
+    expect(storyboardEvents(d)).toEqual([{ t: 100, kind: "type", durationMs: Math.round(time) - 100, chars: 3 }]);
+    expect(storyboardEvents(d)[0]).toMatchObject({ durationMs: expect.any(Number) });
+    expect(time - 100).toBeGreaterThan(3 * 12);
+  });
+});

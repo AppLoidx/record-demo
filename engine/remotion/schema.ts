@@ -16,6 +16,7 @@ const spotlightRectSchema = rectSchema.extend({
 const carryTextSchema = z.object({ fontSize: z.number().positive(), fontFamily: z.string(), fontWeight: z.string(), color: z.string() });
 
 const timelineEventSchema = z.discriminatedUnion("kind", [
+  z.object({ t: z.number(), kind: z.literal("type"), durationMs: z.number().nonnegative(), chars: z.number().int().nonnegative() }),
   z.object({ t: z.number(), kind: z.literal("rail"), steps: z.array(z.string()).min(1), active: z.number().int().nonnegative() }),
   z.object({ t: z.number(), kind: z.literal("rail-back"), from: z.number().int().nonnegative(), to: z.number().int().nonnegative() }),
   z.object({ t: z.number(), kind: z.literal("rail-off") }),

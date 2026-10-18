@@ -92,6 +92,29 @@ the exported MP4.
   MP4 with `ffmpeg` and plot the waveform next to them. Then give the user five timestamps
   to check on headphones. Never claim the sound is good.
 
+Run the measured post-render pass with supplied music and `whoosh.mp3`, `pop.mp3`,
+`click.mp3`, `typing.mp3` plus verbatim attributions in `<sfx-dir>/credits.txt`:
+
+```bash
+node engine/scripts/add-sound.mjs --video <export.mp4> --timeline <timeline.json> \
+  --music <instrumental.mp3> --music-credit "<title, artist, source, license>" \
+  --sfx-dir <sfx-dir> --music-offset auto --out out/sound-pass/demo.mp4
+```
+
+Uses `AUDIO_PYTHON` (default `/home/bbx/.venvs/audio/bin/python`) with librosa,
+matplotlib, scipy and soundfile. `d.type()` records typing spans; for old timelines,
+pass `--typing "start-end,start-end"` in **timeline seconds** (textbox click to next
+zoom). Cues are mapped through hidden cuts into composition time; nearby discrete
+cues prefer whoosh, then pop, then click. `--music-offset <seconds>` overrides auto.
+Auto keeps the detected final strong low-band attack within the end card and
+minimizes major-cue beat error; the continuous slice fades to the video end. Final
+attack detection is a heuristic: inspect the beat grid and cue errors, then listen.
+Alongside the output are `cues.json`, `beats.json`, `beat-grid.png`, `credits.txt`,
+exported AAC loudness measurements, `proof/` cue frames/waveforms/contact sheets and
+`headphones.txt`. The command copies the video stream and fails unless exported
+I is -17..-15 LUFS and true peak is below -4 dBFS. Listen at the five timestamps;
+passing measurements do not establish sound quality.
+
 **6. Measure, then watch like the client.** Render at 60 fps and measure:
 
 ```bash
