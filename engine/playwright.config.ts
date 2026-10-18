@@ -15,7 +15,9 @@ const targetUrl = process.env.DEMO_TARGET_URL ?? "https://example.org";
 export default defineConfig({
   testDir: path.dirname(playwrightEntryPath),
   testMatch: path.basename(playwrightEntryPath),
-  timeout: 180_000,
+  // Multi-scene storyboards against local dev apps (route warm-up + ~90s of
+  // capture) exceed 3 minutes.
+  timeout: 300_000,
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,

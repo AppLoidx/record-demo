@@ -1,5 +1,9 @@
 import type { CSSProperties, ReactNode } from "react";
-import { OffthreadVideo } from "remotion";
+import { OffthreadVideo, Sequence, useVideoConfig } from "remotion";
+import {
+  timeMapFramePieces,
+  type TimeMap,
+} from "../lib/time-map";
 import type { Timeline } from "../lib/timeline";
 import { Cursor } from "./Cursor";
 import { demoTheme } from "./theme";
@@ -17,8 +21,44 @@ type ScreenProps = {
   videoSrc: string;
   camera: CameraTransform;
   showCursor: boolean;
+  timeMap: TimeMap;
+  timeMs: number;
   children?: ReactNode;
+  shadow?: boolean;
 };
+
+function TimelineVideo({
+  videoSrc,
+  timeMap,
+  style,
+}: {
+  videoSrc: string;
+  timeMap: TimeMap;
+  style: CSSProperties;
+}) {
+  const { fps, durationInFrames } = useVideoConfig();
+  if (timeMap.cuts.length === 0) {
+    return <OffthreadVideo src={videoSrc} muted style={style} />;
+  }
+
+  return timeMapFramePieces(timeMap, fps, durationInFrames).map((piece) => {
+    return (
+      <Sequence
+        key={`${piece.from}-${piece.startFrom}`}
+        from={piece.from}
+        durationInFrames={piece.durationInFrames}
+        layout="none"
+      >
+        <OffthreadVideo
+          src={videoSrc}
+          muted
+          startFrom={piece.startFrom}
+          style={style}
+        />
+      </Sequence>
+    );
+  });
+}
 
 function UrlPill() {
   return (
@@ -46,10 +86,12 @@ function UrlPill() {
   );
 }
 
-function ChromeBar({
+export function ChromeBar({
   variant,
   height,
+  title,
 }: {
+  title?: string;
   variant: Exclude<WindowChrome, "none">;
   height: number;
 }) {
@@ -105,7 +147,24 @@ function ChromeBar({
           <span>›</span>
         </div>
       )}
-      <UrlPill />
+      {title === undefined ? (
+        <UrlPill />
+      ) : (
+        <div
+          style={{
+            maxWidth: "65%",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
+            fontFamily: demoTheme.fontFamily,
+            fontSize: 16,
+            fontWeight: 500,
+            color: demoTheme.colors.contentSecondary,
+          }}
+        >
+          {title}
+        </div>
+      )}
     </div>
   );
 }
@@ -118,6 +177,8 @@ function VideoViewport({
   camera,
   radius,
   showCursor,
+  timeMap,
+  timeMs,
   children,
 }: {
   width: number;
@@ -127,6 +188,8 @@ function VideoViewport({
   camera: CameraTransform;
   radius: CSSProperties["borderRadius"];
   showCursor: boolean;
+  timeMap: TimeMap;
+  timeMs: number;
   children?: ReactNode;
 }) {
   const sourceWidth =
@@ -157,9 +220,9 @@ function VideoViewport({
           willChange: "transform",
         }}
       >
-        <OffthreadVideo
-          src={videoSrc}
-          muted
+        <TimelineVideo
+          videoSrc={videoSrc}
+          timeMap={timeMap}
           style={{
             width: sourceWidth,
             height: sourceHeight,
@@ -168,7 +231,9 @@ function VideoViewport({
         />
         {children}
       </div>
-      {showCursor ? <Cursor timeline={timeline} camera={camera} /> : null}
+      {showCursor ? (
+        <Cursor timeline={timeline} camera={camera} timeMs={timeMs} />
+      ) : null}
     </div>
   );
 }
@@ -183,7 +248,10 @@ export function Screen({
   videoSrc,
   camera,
   showCursor,
+  timeMap,
+  timeMs,
   children,
+  shadow = true,
 }: ScreenProps) {
   const viewportRadius =
     chrome === "none" ? radius : `0 0 ${radius}px ${radius}px`;
@@ -196,7 +264,7 @@ export function Screen({
         border: `1px solid ${demoTheme.colors.line}`,
         borderRadius: radius,
         backgroundColor: demoTheme.colors.surface,
-        boxShadow: demoTheme.screen.shadow,
+        boxShadow: shadow ? demoTheme.screen.shadow : undefined,
       }}
     >
       {chrome === "none" ? null : (
@@ -210,6 +278,8 @@ export function Screen({
         camera={camera}
         radius={viewportRadius}
         showCursor={showCursor}
+        timeMap={timeMap}
+        timeMs={timeMs}
       >
         {children}
       </VideoViewport>

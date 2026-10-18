@@ -13,7 +13,43 @@ const spotlightRectSchema = rectSchema.extend({
   height: z.number().nonnegative(),
 });
 
+const carryTextSchema = z.object({ fontSize: z.number().positive(), fontFamily: z.string(), fontWeight: z.string(), color: z.string() });
+
 const timelineEventSchema = z.discriminatedUnion("kind", [
+  z.object({ t: z.number(), kind: z.literal("type"), durationMs: z.number().nonnegative(), chars: z.number().int().nonnegative() }),
+  z.object({ t: z.number(), kind: z.literal("rail"), steps: z.array(z.string()).min(1), active: z.number().int().nonnegative() }),
+  z.object({ t: z.number(), kind: z.literal("rail-back"), from: z.number().int().nonnegative(), to: z.number().int().nonnegative() }),
+  z.object({ t: z.number(), kind: z.literal("rail-off") }),
+  z.object({ t: z.number(), kind: z.literal("carry"), rect: spotlightRectSchema, text: z.string(), textStyle: carryTextSchema.optional() }),
+  z.object({ t: z.number(), kind: z.literal("land"), rect: spotlightRectSchema, text: z.string().optional(), lineCount: z.number().int().positive().optional(), lines: z.array(z.object({ rect: spotlightRectSchema, text: z.string() })).min(1).optional(), conceal: z.boolean().optional(), concealColor: z.string().optional(), textStyle: carryTextSchema.optional() }),
+  z.object({ t: z.number(), kind: z.literal("callout"), rect: spotlightRectSchema,
+    text: z.string(), holdMs: z.number().nonnegative(), side: z.enum(["left", "right", "top", "bottom"]) }),
+  z.object({ t: z.number(), kind: z.literal("role"), label: z.string() }),
+  z.object({
+    t: z.number(),
+    kind: z.literal("window"),
+    image: z.string().min(1),
+    imageWidth: z.number().positive(),
+    imageHeight: z.number().positive(),
+    title: z.string().optional(),
+    holdMs: z.number().nonnegative(),
+    enterMs: z.number().nonnegative(),
+    exitMs: z.number().nonnegative(),
+    highlight: spotlightRectSchema.optional(),
+    click: z.boolean().optional(),
+  }),
+  z.object({
+    t: z.number(),
+    kind: z.literal("transition"),
+    style: z.literal("cut").optional(),
+    label: z.string(),
+    role: z.string().optional(),
+    chapter: z.object({ index: z.number().int().positive(), total: z.number().int().positive() }).optional(),
+    outMs: z.number().nonnegative(),
+    cardMs: z.number().nonnegative(),
+    visibleCardMs: z.number().nonnegative().optional(),
+    inMs: z.number().nonnegative(),
+  }),
   z.object({
     t: z.number(),
     kind: z.literal("cursor"),

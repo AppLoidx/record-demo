@@ -1,12 +1,13 @@
-import { interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+import { interpolate } from "remotion";
 import { cursorPosition } from "../lib/cursor-position";
-import type { Timeline } from "../lib/timeline";
+import { windowTotalDuration, transitionTotalDuration, type Timeline } from "../lib/timeline";
 import { demoTheme } from "./theme";
 import type { CameraTransform } from "./zoom";
 
 type CursorProps = {
   timeline: Timeline;
   camera: CameraTransform;
+  timeMs: number;
 };
 
 function latestClick(timeline: Timeline, timeMs: number) {
@@ -16,16 +17,54 @@ function latestClick(timeline: Timeline, timeMs: number) {
   return clicks.at(-1);
 }
 
-export function Cursor({ timeline, camera }: CursorProps) {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const timeMs = (frame / fps) * 1_000;
+/** Main pointer stays hidden through every effect phase, then returns without a pop. */
+export function cursorVisibility(timeline: Timeline, timeMs: number) {
+  let opacity = 1;
+  for (const event of timeline.events) {
+    if (event.kind === "transition" && event.style === "cut") continue;
+    if (event.kind !== "window" && event.kind !== "transition") continue;
+    const duration = event.kind === "window" ? windowTotalDuration(event) : transitionTotalDuration(event);
+    const end = event.t + duration;
+    if (timeMs >= event.t && timeMs < end) return 0;
+    if (timeMs >= end) opacity = Math.min(opacity, Math.min(1, (timeMs - end) / demoTheme.cursor.resumeMs));
+  }
+  return opacity;
+}
+
+export function Cursor({ timeline, camera, timeMs }: CursorProps) {
   const position = cursorPosition(timeline, timeMs);
 
   if (!position) return null;
 
   const click = latestClick(timeline, timeMs);
   const clickAge = click ? timeMs - click.t : Number.POSITIVE_INFINITY;
+  const opacity = interpolate(
+    timeMs,
+    [position.firstAt, position.firstAt + demoTheme.cursor.enterDurationMs],
+    [0, 1],
+    {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    },
+  );
+  const deviceScaleFactor = timeline.viewport.deviceScaleFactor;
+  const x = camera.translateX + position.x * deviceScaleFactor * camera.scale;
+  const y = camera.translateY + position.y * deviceScaleFactor * camera.scale;
+
+  return <CursorVisual x={x} y={y} opacity={opacity * cursorVisibility(timeline, timeMs)} clickAge={clickAge} />;
+}
+
+export function CursorVisual({
+  x,
+  y,
+  opacity,
+  clickAge,
+}: {
+  x: number;
+  y: number;
+  opacity: number;
+  clickAge: number;
+}) {
   const clickScale =
     clickAge <= demoTheme.cursor.releaseDurationMs
       ? interpolate(
@@ -51,18 +90,6 @@ export function Cursor({ timeline, camera }: CursorProps) {
       extrapolateRight: "clamp",
     },
   );
-  const opacity = interpolate(
-    timeMs,
-    [position.firstAt, position.firstAt + demoTheme.cursor.enterDurationMs],
-    [0, 1],
-    {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-    },
-  );
-  const deviceScaleFactor = timeline.viewport.deviceScaleFactor;
-  const x = camera.translateX + position.x * deviceScaleFactor * camera.scale;
-  const y = camera.translateY + position.y * deviceScaleFactor * camera.scale;
 
   return (
     <div

@@ -1,8 +1,13 @@
+import { snapshotLandScene, landSceneIsUnchanged, landBackground, type LandSceneSnapshot } from "./land-scene";
+import { measureLandText, readCarryTextStyle } from "./land-text";
+import { calloutSide } from "./callout";
+import { createSceneCameraPath } from "./scene-camera";
 import {
   chromium,
   test,
   type BrowserContext,
   type Locator,
+  type JSHandle,
   type Page,
 } from "@playwright/test";
 import { constants } from "node:fs";
@@ -18,10 +23,18 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  WindowCapture,
+  type WindowRenderer,
+  type WindowSource,
+} from "./window-capture";
 import { moveCursor, type CursorPoint } from "./cursor";
 import { demoTheme } from "../remotion/theme";
 import {
   serializeTimeline,
+  isChapter,
+  type Chapter,
+  type CalloutSide,
   type Rect,
   type Timeline,
   type TimelineEvent,
@@ -215,11 +228,17 @@ export class Storyboard {
   private cursor: CursorPoint;
   private startedAt = 0;
   private started = false;
+  private effect: "window" | "transition" | undefined;
+  private windowCount = 0;
+  private landSceneSnapshot?: JSHandle<LandSceneSnapshot>;
 
   constructor(
     private readonly name: string,
     private page: Page,
     private readonly viewport: Viewport,
+    private readonly windowCapture: WindowRenderer = new WindowCapture({
+      deviceScaleFactor: viewport.deviceScaleFactor,
+    }),
   ) {
     this.cursor = {
       x: viewport.width / 2,
@@ -284,6 +303,254 @@ export class Storyboard {
       durationMs,
     });
     await this.page.waitForTimeout(durationMs);
+  }
+
+  role(label: string) {
+    // Synchronous opening roles may precede the lazy clapperboard.
+    this.events.push({
+      t: this.startedAt === 0 ? 0 : this.now(),
+      kind: "role",
+      label,
+    });
+  }
+
+  rail(steps: string[], active: number) {
+    if (!steps.length || !steps.every((step) => typeof step === "string") ||
+      !Number.isInteger(active) || active < 0 || active >= steps.length)
+      throw new Error("Invalid rail steps or active index");
+    this.events.push({ t: this.startedAt === 0 ? 0 : this.now(), kind: "rail", steps: [...steps], active });
+  }
+
+  railBack(from: number, to: number) {
+    const rail = this.events.filter((event) => event.kind === "rail").at(-1);
+    if (!rail || ![from, to].every((index) => Number.isInteger(index) && index >= 0 && index < rail.steps.length))
+      throw new Error("Invalid rail return indices");
+    this.events.push({ t: this.startedAt === 0 ? 0 : this.now(), kind: "rail-back", from, to });
+  }
+
+  railOff() {
+    this.events.push({ t: this.startedAt === 0 ? 0 : this.now(), kind: "rail-off" });
+  }
+
+  async carry(target: Locator, text: string) {
+    await this.landSceneSnapshot?.dispose();
+    this.landSceneSnapshot = undefined;
+    const rect = await this.measureTarget(target, {
+      padding: 0, scroll: "nearest", containment: "viewport",
+      missingBoxMessage: "Cannot carry an element without a bounding box",
+    });
+    const textStyle = typeof target.evaluate === "function" ? await target.evaluate(readCarryTextStyle) : undefined;
+    this.events.push({ t: this.now(), kind: "carry", rect, text, ...(textStyle ? { textStyle } : {}) });
+    await this.page.waitForTimeout(demoTheme.carry.liftMs);
+  }
+
+  async land(target: Locator, options: { text?: string; conceal?: boolean; concealColor?: string } = {}) {
+    const lastCarry = this.events.filter((event) => event.kind === "carry").at(-1);
+    const carryIndex = lastCarry ? this.events.indexOf(lastCarry) : -1;
+    const pending = carryIndex >= 0 && !this.events.slice(carryIndex + 1).some((event) => event.kind === "land");
+    const scene = pending ? this.events.slice(carryIndex + 1).find((event) => event.kind === "transition") : undefined;
+    const movedMessage = "land target moved after the scene change; scroll inside the cut action";
+    const before = pending ? await target.boundingBox() : undefined;
+    if (pending && (!before || !isRectInsideViewport(before, this.viewport) ||
+      (typeof target.evaluate === "function" && !await target.evaluate(landSceneIsUnchanged, this.landSceneSnapshot)))) {
+      throw new Error(movedMessage);
+    }
+    const rect = await this.measureTarget(target, {
+      padding: 0, scroll: pending ? undefined : "nearest", containment: "viewport",
+      missingBoxMessage: "Cannot land on an element without a bounding box",
+    });
+    if (pending && (!rectsAreIdentical(before!, rect) ||
+      (typeof target.evaluate === "function" && !await target.evaluate(landSceneIsUnchanged, this.landSceneSnapshot)))) {
+      throw new Error(movedMessage);
+    }
+    const text = (scene || options.text !== undefined) && typeof target.evaluate === "function"
+      ? await target.evaluate(measureLandText, options.text) : undefined;
+    const concealColor = options.concealColor ?? (typeof target.evaluate === "function"
+      ? await target.evaluate(landBackground) : undefined) ?? demoTheme.colors.surface;
+    this.events.push({ t: this.now(), kind: "land", rect: text?.rect ?? rect,
+      ...(text ? { textStyle: text.textStyle, ...(text.lines ? { lines: text.lines, lineCount: text.lineCount } : {}) } : {}),
+      ...(options.text === undefined ? {} : { text: options.text }),
+      ...(options.conceal === undefined ? {} : { conceal: options.conceal }),
+      concealColor });
+    await this.page.waitForTimeout(demoTheme.carry.glideMs + demoTheme.carry.dissolveMs);
+    return { rect: text?.rect ?? rect, lineCount: text?.lineCount ?? 1, lines: text?.lines };
+  }
+
+  async window(
+    source: WindowSource,
+    options: {
+      title?: string;
+      holdMs?: number;
+      width?: number;
+      maxHeight?: number;
+      height?: number;
+      highlight?: string;
+      click?: boolean;
+    } = {},
+  ) {
+    this.beginEffect("window");
+    try {
+      const {
+        title,
+        holdMs = 2600,
+        width = 760,
+        maxHeight = options.height ?? demoTheme.window.maxCaptureHeight,
+        highlight,
+        click = false,
+      } = options;
+      if (
+        !Number.isFinite(holdMs) ||
+        holdMs < 0 ||
+        !Number.isInteger(width) ||
+        width <= 0 ||
+        !Number.isInteger(maxHeight) ||
+        maxHeight <= 0
+      ) {
+        throw new Error("Invalid window dimensions or holdMs");
+      }
+      const asset = await this.windowCapture.render(
+        source,
+        { width, maxHeight, highlight },
+        `${this.name}-window-${++this.windowCount}.png`,
+      );
+      await this.ensureStarted();
+      const { enterMs, exitMs } = demoTheme.window;
+      this.events.push({
+        t: this.now(),
+        kind: "window",
+        ...asset,
+        ...(title === undefined ? {} : { title }),
+        holdMs,
+        enterMs,
+        exitMs,
+        click,
+      });
+      await this.page.waitForTimeout(enterMs + holdMs + exitMs);
+    } finally {
+      this.effect = undefined;
+    }
+  }
+
+  /** Card-less scene change; action time is entirely removed at render time. */
+  async cut(action: StoryboardAction, options: { visibleMs?: number } = {}) {
+    const visibleMs = options.visibleMs ?? demoTheme.cut.visibleMs;
+    if (!Number.isFinite(visibleMs) || visibleMs <= 0) throw new Error("Invalid cut visibleMs");
+    await this.transition("", action, { style: "cut", visibleMs });
+  }
+
+  async transition(
+    label: string,
+    action: StoryboardAction,
+    options: {
+      style?: "cut";
+      visibleMs?: number;
+      role?: string;
+      minCardMs?: number;
+      visibleCardMs?: number;
+      chapter?: Chapter;
+    } = {},
+  ) {
+    this.beginEffect("transition");
+    const transitionEvents: TimelineEvent[] = [];
+    try {
+      const {
+        role,
+        chapter,
+        minCardMs = demoTheme.transition.minCardMs,
+        visibleCardMs,
+      } = options;
+      if (chapter !== undefined && !isChapter(chapter)) throw new Error("Invalid transition chapter");
+      if (!Number.isFinite(minCardMs) || minCardMs < 0)
+        throw new Error("Invalid transition minCardMs");
+      if (
+        visibleCardMs !== undefined &&
+        (!Number.isFinite(visibleCardMs) || visibleCardMs < 0)
+      )
+        throw new Error("Invalid transition visibleCardMs");
+      await this.ensureStarted();
+      const t = this.now();
+      const isCut = options.style === "cut";
+      const outMs = isCut ? 0 : demoTheme.transition.outMs;
+      const inMs = isCut ? options.visibleMs ?? demoTheme.cut.visibleMs : demoTheme.transition.inMs;
+      if (!Number.isFinite(inMs) || inMs <= 0) throw new Error("Invalid cut visibleMs");
+      const lastZoom = this.events
+        .filter((event) => event.kind === "zoom")
+        .at(-1);
+      const camera = createSceneCameraPath(
+        {
+          version: 1,
+          name: this.name,
+          viewport: this.viewport,
+          capture: { fps: CAPTURE_FPS, syncFlashAt: 0 },
+          durationMs: t,
+          events: this.events,
+        },
+        60,
+        this.viewport.width * this.viewport.deviceScaleFactor,
+        this.viewport.height * this.viewport.deviceScaleFactor,
+      ).atFrame((t * 60) / 1000);
+      if (
+        (lastZoom?.kind === "zoom" && lastZoom.rect !== null) ||
+        camera.scale > 1 + 1e-9
+      )
+        this.events.push({ t, kind: "zoom", rect: null });
+      const event = {
+        t,
+        kind: "transition" as const,
+        label,
+        ...(isCut ? { style: "cut" as const } : {}),
+        ...(role === undefined ? {} : { role }),
+        ...(chapter === undefined ? {} : { chapter }),
+        outMs,
+        cardMs: minCardMs,
+        ...(visibleCardMs === undefined ? {} : { visibleCardMs }),
+        inMs,
+      };
+      this.events.push(event);
+      transitionEvents.push(event);
+      await this.page.waitForTimeout(outMs);
+      const cardStartedAt = isCut ? t : this.now();
+      await action(this.page);
+      const actionMs = this.now() - cardStartedAt;
+      await this.page.waitForTimeout(Math.max(0, (isCut ? 0 : minCardMs) - actionMs));
+      const pendingCarry = [...this.events].reverse().find((candidate) => candidate.kind === "carry" || candidate.kind === "land");
+      const firstScene = pendingCarry?.kind === "carry"
+        ? this.events.slice(this.events.indexOf(pendingCarry) + 1).find((candidate) => candidate.kind === "transition") : undefined;
+      if (firstScene === event && typeof this.page.evaluateHandle === "function") {
+        await this.landSceneSnapshot?.dispose();
+        this.landSceneSnapshot = await this.page.evaluateHandle(snapshotLandScene);
+      }
+      event.cardMs = this.now() - cardStartedAt;
+      if (role !== undefined) {
+        const roleEvent = {
+          t: t + outMs + event.cardMs / 2,
+          kind: "role" as const,
+          label: role,
+        };
+        this.events.push(roleEvent);
+        transitionEvents.push(roleEvent);
+      }
+      await this.page.waitForTimeout(inMs);
+    } catch (error) {
+      // A caller may recover and record another effect immediately. Remove the
+      // incomplete transition so that recovery cannot overlap it in the video.
+      for (const event of transitionEvents)
+        this.events.splice(this.events.indexOf(event), 1);
+      throw error;
+    } finally {
+      this.effect = undefined;
+    }
+  }
+
+  async close() {
+    await this.landSceneSnapshot?.dispose();
+    await this.windowCapture.close();
+  }
+
+  private beginEffect(kind: "window" | "transition") {
+    if (this.effect)
+      throw new Error(`Cannot overlap ${kind} with ${this.effect}`);
+    this.effect = kind;
   }
 
   async click(locator: Locator) {
@@ -399,6 +666,18 @@ export class Storyboard {
     });
   }
 
+  async callout(target: Locator | Locator[], text: string, options: { holdMs?: number; side?: CalloutSide } = {}) {
+    const { holdMs = demoTheme.callout.holdMs, side } = options;
+    if (!Number.isFinite(holdMs) || holdMs < 0) throw new Error("Invalid callout holdMs");
+    const rect = await this.measureTarget(target, {
+      padding: 0, scroll: "nearest", containment: "viewport",
+      missingBoxMessage: "Cannot annotate an element without a bounding box",
+    });
+    this.events.push({ t: this.now(), kind: "callout", rect, text, holdMs,
+      side: side ?? calloutSide(rect, this.viewport.width, this.viewport.height) });
+    // Measurement is awaited; the animation lifetime never blocks subsequent actions.
+  }
+
   spotlightOff() {
     for (let index = this.events.length - 1; index >= 0; index -= 1) {
       const event = this.events[index]!;
@@ -431,6 +710,7 @@ export class Storyboard {
    * after word boundaries.
    */
   async type(text: string, baseDelayMs = 55) {
+    const t = this.now();
     for (let index = 0; index < text.length; index += 1) {
       const character = text[index]!;
       await this.page.keyboard.type(character);
@@ -439,6 +719,7 @@ export class Storyboard {
       if (" .@-_".includes(character)) delay += baseDelayMs * 0.8;
       await this.page.waitForTimeout(delay);
     }
+    this.events.push({ t, kind: "type", durationMs: Math.max(0, this.now() - t), chars: text.length });
   }
 
   /**
@@ -748,12 +1029,24 @@ async function runStoryboard(
     const viewport = await readAndAssertViewport(page);
     await page.waitForLoadState("load");
     await page.waitForTimeout(250);
-    const storyboard = new Storyboard(name, page, viewport);
+    const storyboard = new Storyboard(
+      name,
+      page,
+      viewport,
+      new WindowCapture({
+        executablePath,
+        deviceScaleFactor: viewport.deviceScaleFactor,
+      }),
+    );
 
     try {
       await action(storyboard);
     } finally {
-      await storyboard.writeTimeline();
+      try {
+        await storyboard.writeTimeline();
+      } finally {
+        await storyboard.close();
+      }
     }
   } catch (error) {
     throw storyboardFailure(error, clientErrors);
