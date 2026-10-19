@@ -7,7 +7,7 @@
     "deviceScaleFactor": 1.5
   },
   "capture": {
-    "fps": 30,
+    "fps": 60,
     "syncFlashAt": 0
   },
   "durationMs": 2000,

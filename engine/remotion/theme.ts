@@ -2,7 +2,7 @@ export const captureViewport = {
   width: 1920,
   height: 1080,
   deviceScaleFactor: 1.5,
-  fps: 30,
+  fps: 60,
 } as const;
 
 export const compositionFps = 60;

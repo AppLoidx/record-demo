@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { compositionPresets } from "../remotion/theme.ts";
 
 export const formatIds = compositionPresets.map(({ id }) => id);
 export const windowChromeValues = ["none", "macos", "browser"];
+export const browserChannels = ["chrome", "msedge"];
 const defaultFormat = "16x9";
 
 if (!formatIds.includes(defaultFormat)) {
@@ -12,7 +13,7 @@ if (!formatIds.includes(defaultFormat)) {
 }
 
 export const usage =
-  "Usage: node record.mjs --script <path> --url <absolute http(s) url> [--name <slug>] [--formats <csv>] [--chrome <none|macos|browser>] [--storage-state <path>] [--raw]";
+  "Usage: node record.mjs --script <path> --url <absolute http(s) url> [--name <slug>] [--formats <csv>] [--chrome <none|macos|browser>] [--storage-state <path>] [--profile <dir>] [--channel <chrome|msedge>] [--headed] [--raw]";
 
 function assertStorageStateShape(storageState, storageStatePath) {
   if (
@@ -59,11 +60,16 @@ function assertStorageStatePathIsSafe(storageStatePath) {
 export function parseCliArgs(cliArgs, cwd = process.cwd()) {
   const values = new Map();
   let rawOnly = false;
+  let headed = false;
 
   for (let index = 0; index < cliArgs.length; index += 1) {
     const arg = cliArgs[index];
     if (arg === "--raw") {
       rawOnly = true;
+      continue;
+    }
+    if (arg === "--headed") {
+      headed = true;
       continue;
     }
     if (
@@ -74,6 +80,8 @@ export function parseCliArgs(cliArgs, cwd = process.cwd()) {
         "--formats",
         "--chrome",
         "--storage-state",
+        "--profile",
+        "--channel",
       ].includes(arg)
     ) {
       throw new Error(`${usage}\nUnknown argument: ${arg}`);
@@ -161,9 +169,31 @@ export function parseCliArgs(cliArgs, cwd = process.cwd()) {
     assertStorageStatePathIsSafe(storageStatePath);
   }
 
+  const profileArg = values.get("--profile");
+  const profileDir = profileArg ? path.resolve(cwd, profileArg) : undefined;
+  if (profileDir) {
+    let isDirectory = false;
+    try {
+      isDirectory = statSync(profileDir).isDirectory();
+    } catch {}
+    if (!isDirectory) {
+      throw new Error(`Browser profile directory does not exist: ${profileDir}`);
+    }
+  }
+
+  const browserChannel = values.get("--channel");
+  if (browserChannel !== undefined && !browserChannels.includes(browserChannel)) {
+    throw new Error(
+      `${usage}\nInvalid --channel value: ${browserChannel}. Valid values: ${browserChannels.join(", ")}.`,
+    );
+  }
+
   return {
+    ...(browserChannel ? { browserChannel } : {}),
     demoName,
     formats,
+    headed,
+    ...(profileDir ? { profileDir } : {}),
     rawOnly,
     scriptPath,
     ...(storageStatePath ? { storageStatePath } : {}),

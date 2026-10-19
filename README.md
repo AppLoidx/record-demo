@@ -1,17 +1,17 @@
 # record-demo
 
 Agent skill + self-contained engine for recording scripted screen-capture demo videos
-of any live website: Playwright drives a headed Chrome under Xvfb, ffmpeg captures,
-Remotion composites cursor, zoom, spotlight and captions; outputs mp4 (raw + edited
+of any live website, on macOS, Windows or Linux: Playwright drives Chrome, the
+DevTools screencast captures Chrome's own frames, and Remotion composites cursor, zoom, spotlight and captions; outputs mp4 (raw + edited
 16x9) and GIF.
 
 See SKILL.md for usage. Engine lives in `engine/` (own pnpm workspace; `pnpm install`
-once, Node >= 22.18, needs `ffmpeg`, `Xvfb`, `xdpyinfo`).
+once, Node >= 22.18; ffmpeg comes bundled with Remotion).
 
 ## Install
 
-System dependencies: Node >= 22.18, `ffmpeg` with x11grab support, `Xvfb`,
-`xdpyinfo`, and `pnpm`.
+System dependencies: Node >= 22.18 and `pnpm`. Nothing else: the browser and an
+ffmpeg build arrive with `pnpm install`.
 
 For Claude Code:
 
@@ -41,8 +41,8 @@ Paste this into your agent instead of running the commands yourself:
 ```text
 Install the record-demo skill: clone <repo> into ~/.claude/skills/record-demo
 (Claude Code) or ~/.agents/skills/record-demo (Codex / Copilot CLI / Gemini CLI),
-then run `pnpm install` inside its engine/ directory. Verify Node >= 22.18,
-ffmpeg, Xvfb, and xdpyinfo are available, and report anything missing.
+then run `pnpm install` inside its engine/ directory. Verify Node >= 22.18
+and pnpm are available, and report anything missing.
 ```
 
 ## Example prompt
@@ -61,12 +61,21 @@ The agent writes the storyboard, runs the pipeline, and returns the deliverable
 paths. The clip in the next section was produced from exactly this kind of
 prompt.
 
-For authenticated staging or test sites, create a one-shot handoff path with
-`storageStatePath="$(mktemp -d)/<account>.storage-state.json"`, save the signed-in
-browser context there, and pass it to the recorder with `--storage-state <path>`.
-Treat the file as a secret: never commit or print it. The recorder deletes it
-immediately after loading it, so re-recording requires a fresh login and no auth
-state is left on disk.
+### Sites behind a login
+
+You log in; the agent records. Either sign in once in a dedicated Chrome profile and
+pass `--profile <dir>` (works for any login, reused across takes), or save a
+storage-state file without code and pass `--storage-state <path>` (one-shot, deleted
+after loading):
+
+```bash
+cd ~/.claude/skills/record-demo/engine
+pnpm exec playwright open --save-storage "$(mktemp -d)/me.storage-state.json" https://app.example.com
+```
+
+Then ask the agent as above and name the file or profile. Treat both as secrets.
+Record in an account whose data is fine to show on video. Details: SKILL.md,
+"Sites behind a login".
 
 ## Example
 

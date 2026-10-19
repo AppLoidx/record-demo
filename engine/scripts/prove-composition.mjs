@@ -7,6 +7,7 @@ if (nodeMajor < 22) {
 }
 
 const { spawn } = await import("node:child_process");
+const { bundledTool } = await import("../lib/ffmpeg.mjs");
 const {
   mkdir,
   readFile,
@@ -45,6 +46,9 @@ function systemEnv() {
 }
 
 function run(command, args, { capture = false } = {}) {
+  if (command === "ffmpeg" || command === "ffprobe") {
+    [command, args] = bundledTool(command, args);
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: demosRoot,
@@ -78,7 +82,7 @@ async function main() {
     "-f",
     "lavfi",
     "-i",
-    "testsrc2=size=2880x1620:rate=30",
+    "testsrc2=size=2880x1620:rate=60",
     "-t",
     durationSeconds.toFixed(3),
     "-an",

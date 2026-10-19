@@ -22,7 +22,10 @@ const {
 } = await import("node:fs/promises");
 const path = await import("node:path");
 const { fileURLToPath } = await import("node:url");
-const { findClapperboardFrame } = await import("./lib/clapperboard.ts");
+const { bundledTool } = await import("./lib/ffmpeg.mjs");
+const { buildConcatList, parseFrameManifest } = await import(
+  "./lib/frames.ts",
+);
 const { encodeGif, gifPalettePath, logGifResult } = await import(
   "./lib/gif.mjs"
 );
@@ -41,13 +44,13 @@ const demosRoot = fileURLToPath(new URL(".", import.meta.url));
 const outputDir = path.join(demosRoot, "out");
 const publicDir = path.join(demosRoot, "public");
 const timelinePath = path.join(outputDir, "timeline.json");
-const display = ":99";
 const expectedViewport = {
   width: 1920,
   height: 1080,
   deviceScaleFactor: 1.5,
 };
-const captureFps = 30;
+const captureFps = 60;
+const isWindows = process.platform === "win32";
 const ownedChildren = new Map();
 const ephemeralPaths = new Set();
 let cleanupPromise;
@@ -62,7 +65,9 @@ function launchOwned(name, command, args, options = {}) {
     cwd: options.cwd ?? demosRoot,
     env: options.env ?? systemEnv(),
     stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
-    detached: true,
+    detached: !isWindows,
+    // pnpm is a .cmd shim on Windows, which only a shell can start.
+    shell: isWindows && command === "pnpm",
   });
   ownedChildren.set(child, name);
   child.once("exit", () => ownedChildren.delete(child));
@@ -95,6 +100,10 @@ function waitForExit(child) {
 
 function signalProcessGroup(child, signal) {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  if (isWindows) {
+    child.kill(signal);
+    return;
+  }
   try {
     process.kill(-child.pid, signal);
   } catch (error) {
@@ -102,15 +111,10 @@ function signalProcessGroup(child, signal) {
   }
 }
 
-async function stopOwned(child, { finalizeFfmpeg = false } = {}) {
+async function stopOwned(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
 
-  if (finalizeFfmpeg && child.stdin?.writable) {
-    child.stdin.write("q\n");
-  } else {
-    signalProcessGroup(child, "SIGTERM");
-  }
-
+  signalProcessGroup(child, "SIGTERM");
   const exited = await Promise.race([
     waitForExit(child).then(() => true),
     delay(5_000).then(() => false),
@@ -125,9 +129,7 @@ async function cleanup() {
   cleanupPromise ??= (async () => {
     const children = [...ownedChildren.entries()].reverse();
     await Promise.allSettled(
-      children.map(([child, name]) =>
-        stopOwned(child, { finalizeFfmpeg: name === "ffmpeg capture" }),
-      ),
+      children.map(([child]) => stopOwned(child)),
     );
     await Promise.allSettled(
       [...ephemeralPaths].map((filePath) =>
@@ -154,97 +156,6 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   });
 }
 
-async function executableExists(command) {
-  for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
-    if (!directory) continue;
-    try {
-      await access(path.join(directory, command), fsConstants.X_OK);
-      return true;
-    } catch {}
-  }
-  return false;
-}
-
-async function displayGeometry() {
-  const child = spawn("xdpyinfo", ["-display", display], {
-    env: systemEnv({ DISPLAY: display }),
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => {
-    stdout += chunk;
-  });
-  const { code } = await waitForExit(child);
-  if (code !== 0) return null;
-  const dimensions = stdout.match(/dimensions:\s+(\d+)x(\d+)\s+pixels/);
-  const depth = stdout.match(/depth of root window:\s+(\d+)\s+planes/);
-  if (!dimensions || !depth) {
-    throw new Error(`Could not parse ${display} geometry from xdpyinfo.`);
-  }
-  return {
-    width: Number(dimensions[1]),
-    height: Number(dimensions[2]),
-    depth: Number(depth[1]),
-  };
-}
-
-async function ensureXvfb() {
-  if (!(await executableExists("Xvfb"))) {
-    throw new Error(
-      "Xvfb is required for demo recording. Install it with: sudo apt install -y xvfb",
-    );
-  }
-  if (!(await executableExists("xdpyinfo"))) {
-    throw new Error("xdpyinfo is required to verify the Xvfb display geometry.");
-  }
-
-  const existing = await displayGeometry();
-  if (existing) {
-    if (
-      existing.width !== 2880 ||
-      existing.height !== 1620 ||
-      existing.depth !== 24
-    ) {
-      throw new Error(
-        `Existing Xvfb ${display} has ${existing.width}x${existing.height}x${existing.depth} geometry; expected 2880x1620x24.`,
-      );
-    }
-    console.log(`Reusing Xvfb ${display} at 2880x1620x24.`);
-    return;
-  }
-
-  await Promise.all([
-    rm("/tmp/.X99-lock", { force: true }),
-    rm("/tmp/.X11-unix/X99", { force: true }),
-  ]);
-  console.log(`Starting Xvfb ${display} at 2880x1620x24.`);
-  const xvfb = launchOwned(
-    "Xvfb",
-    "Xvfb",
-    [display, "-screen", "0", "2880x1620x24", "-nolisten", "tcp", "-ac"],
-    { env: systemEnv() },
-  );
-  const output = childOutputTail(xvfb);
-  const deadline = Date.now() + 10_000;
-
-  while (Date.now() < deadline) {
-    if (xvfb.exitCode !== null || xvfb.signalCode !== null) {
-      throw new Error(`Xvfb exited before becoming ready.\n${output()}`);
-    }
-    const geometry = await displayGeometry();
-    if (
-      geometry?.width === 2880 &&
-      geometry.height === 1620 &&
-      geometry.depth === 24
-    ) {
-      return;
-    }
-    await delay(100);
-  }
-
-  throw new Error(`Xvfb did not become ready.\n${output()}`);
-}
-
 async function runCommand(command, args, options = {}) {
   const child = launchOwned(options.name ?? command, command, args, {
     cwd: options.cwd,
@@ -257,132 +168,6 @@ async function runCommand(command, args, options = {}) {
       `${options.name ?? command} failed (${signal ? `signal ${signal}` : `exit ${code}`}).`,
     );
   }
-}
-
-async function runCaptured(command, args) {
-  const child = launchOwned(command, command, args, {
-    cwd: demosRoot,
-    env: systemEnv(),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const stdout = [];
-  let stderr = "";
-  child.stdout.on("data", (chunk) => stdout.push(chunk));
-  child.stderr.on("data", (chunk) => {
-    stderr = `${stderr}${chunk}`.slice(-8_000);
-  });
-  const { code, signal } = await waitForExit(child);
-  if (code !== 0) {
-    throw new Error(
-      `${command} failed (${signal ? `signal ${signal}` : `exit ${code}`}).\n${stderr.trim()}`,
-    );
-  }
-  return Buffer.concat(stdout);
-}
-
-async function startRecording(masterPath) {
-  console.log("Starting 2880x1620 capture at 30fps.");
-  const ffmpeg = launchOwned(
-    "ffmpeg capture",
-    "ffmpeg",
-    [
-      "-y",
-      "-f",
-      "x11grab",
-      "-draw_mouse",
-      "0",
-      "-framerate",
-      String(captureFps),
-      "-video_size",
-      "2880x1620",
-      "-i",
-      display,
-      "-an",
-      "-c:v",
-      "ffv1",
-      "-level",
-      "3",
-      "-g",
-      "1",
-      "-slicecrc",
-      "1",
-      masterPath,
-    ],
-    {
-      env: systemEnv({ DISPLAY: display }),
-      stdio: ["pipe", "ignore", "pipe"],
-    },
-  );
-  const output = childOutputTail(ffmpeg);
-  await delay(750);
-  if (ffmpeg.exitCode !== null || ffmpeg.signalCode !== null) {
-    throw new Error(`ffmpeg could not start capture.\n${output()}`);
-  }
-  return { ffmpeg, output };
-}
-
-function hexToRgb(value) {
-  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
-  if (!match) throw new Error(`Unsupported clapperboard colour: ${value}`);
-  return match.slice(1).map((channel) => Number.parseInt(channel, 16));
-}
-
-async function clapperboardColor() {
-  const source = await readFile(
-    path.join(demosRoot, "lib", "storyboard.ts"),
-    "utf8",
-  );
-  const match = source.match(
-    /export const CLAPPERBOARD_COLOR\s*=\s*["'](#[0-9a-f]{6})["']/i,
-  );
-  if (!match) {
-    throw new Error(
-      "Could not read exported CLAPPERBOARD_COLOR from lib/storyboard.ts.",
-    );
-  }
-  return hexToRgb(match[1]);
-}
-
-async function detectSyncFlash(masterPath) {
-  const pixels = await runCaptured("ffmpeg", [
-    "-v",
-    "error",
-    "-i",
-    masterPath,
-    // Cold vite compiles can delay the first paint (and the sentinel flash)
-    // well past 15s; scan a wide window, it is a cheap 1x1 downscale.
-    "-t",
-    "60",
-    "-vf",
-    "scale=1:1:flags=area",
-    "-pix_fmt",
-    "rgb24",
-    "-f",
-    "rawvideo",
-    "pipe:1",
-  ]);
-  if (pixels.length % 3 !== 0) {
-    throw new Error("ffmpeg returned an incomplete RGB frame series.");
-  }
-
-  const frames = [];
-  for (let index = 0; index < pixels.length; index += 3) {
-    frames.push([pixels[index], pixels[index + 1], pixels[index + 2]]);
-  }
-  const match = findClapperboardFrame(frames, {
-    sentinel: await clapperboardColor(),
-    fps: captureFps,
-    // The 1x1 downscale averages in non-sentinel pixels (external targets do
-    // not always fill the X screen edge-to-edge during startup); observed flash
-    // averages reach (52, 249, 41). 64 keeps black/app frames out.
-    tolerance: 64,
-  });
-  if (!match) {
-    throw new Error(
-      "Could not find two consecutive clapperboard frames in the first 60 seconds of the master.",
-    );
-  }
-  return match;
 }
 
 function assertCaptureGeometry(timeline, demoName) {
@@ -408,35 +193,58 @@ function assertCaptureGeometry(timeline, demoName) {
   }
 }
 
-async function createRemotionSource(masterPath, outputPath, syncFlashAt) {
+async function runFfmpeg(args, name) {
+  const [command, commandArgs] = bundledTool("ffmpeg", args);
+  await runCommand(command, commandArgs, {
+    name,
+    cwd: demosRoot,
+    env: systemEnv(),
+  });
+}
+
+// Chrome sends a frame only when the page repaints, so each frame holds until
+// the next paint; resampling to a constant rate gives Remotion a normal video.
+async function encodeScreencast(demoName, timeline, outputPath) {
+  const framesDir = path.join(outputDir, `.frames-${demoName}`);
+  const manifestPath = path.join(outputDir, `${demoName}-frames.json`);
+  ephemeralPaths.add(framesDir);
+  ephemeralPaths.add(manifestPath);
+  const { frames } = parseFrameManifest(await readFile(manifestPath, "utf8"));
+  const listPath = path.join(framesDir, "frames.txt");
+  await writeFile(listPath, buildConcatList(frames, timeline.durationMs), "utf8");
   console.log(
-    `Trimming master at ${syncFlashAt.toFixed(2)}ms and transcoding for Remotion.`,
+    `Encoding ${frames.length} screencast frames at ${captureFps}fps.`,
   );
-  await runCommand(
-    "ffmpeg",
+  await runFfmpeg(
     [
       "-y",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
       "-i",
-      masterPath,
-      "-ss",
-      (syncFlashAt / 1_000).toFixed(9),
+      listPath,
       "-an",
+      "-fps_mode",
+      "cfr",
+      "-r",
+      String(captureFps),
+      "-t",
+      (timeline.durationMs / 1_000).toFixed(3),
       "-c:v",
       "libx264",
       "-preset",
-      "slow",
+      "medium",
       "-crf",
       "0",
       "-pix_fmt",
       "yuv420p",
-      "-vf",
-      `setpts=PTS-STARTPTS,fps=${captureFps}`,
       "-movflags",
       "+faststart",
       outputPath,
     ],
-    { name: "Remotion source transcode", cwd: demosRoot, env: systemEnv() },
-  );
+    "Screencast encode",
+  )
 }
 
 async function renderCompositions(
@@ -531,8 +339,11 @@ async function createPlaywrightEntry(scriptPath) {
 
 async function main() {
   const {
+    browserChannel,
     demoName,
     formats,
+    headed,
+    profileDir,
     rawOnly,
     scriptPath,
     storageStatePath,
@@ -541,97 +352,54 @@ async function main() {
   } = parseCliArgs(process.argv.slice(2));
   storageStatePathToCleanup = storageStatePath;
   await access(scriptPath, fsConstants.R_OK);
-  if (!(await executableExists("Xvfb"))) {
-    throw new Error(
-      "Xvfb is required for demo recording. Install it with: sudo apt install -y xvfb",
-    );
-  }
-  if (!(await executableExists("ffmpeg"))) {
-    throw new Error("ffmpeg with x11grab support is required for demo recording.");
-  }
 
   await mkdir(outputDir, { recursive: true });
   const playwrightEntryPath = await createPlaywrightEntry(scriptPath);
   console.log(`Recording external target ${targetUrl}.`);
-  await ensureXvfb();
-
-  const masterPath = path.join(outputDir, `${demoName}-master.mkv`);
-  const { ffmpeg, output } = await startRecording(masterPath);
-  try {
-    await runCommand(
-      "pnpm",
-      [
-        "exec",
-        "playwright",
-        "test",
-        playwrightEntryPath,
-        "--config=playwright.config.ts",
-      ],
-      {
-        name: "Playwright storyboard",
-        cwd: demosRoot,
-        env: systemEnv({
-          DISPLAY: display,
-          DEMO_NAME: demoName,
-          DEMO_PLAYWRIGHT_ENTRY_PATH: playwrightEntryPath,
-          DEMO_SCRIPT_PATH: scriptPath,
-          ...(storageStatePath
-            ? { DEMO_STORAGE_STATE_PATH: storageStatePath }
-            : {}),
-          DEMO_TARGET_URL: targetUrl,
-        }),
-      },
-    );
-  } finally {
-    await stopOwned(ffmpeg, { finalizeFfmpeg: true });
-  }
-  if (ffmpeg.exitCode !== 0) {
-    throw new Error(`ffmpeg capture did not finalize successfully.\n${output()}`);
-  }
+  await runCommand(
+    "pnpm",
+    [
+      "exec",
+      "playwright",
+      "test",
+      playwrightEntryPath,
+      "--config=playwright.config.ts",
+    ],
+    {
+      name: "Playwright storyboard",
+      cwd: demosRoot,
+      env: systemEnv({
+        DEMO_NAME: demoName,
+        DEMO_PLAYWRIGHT_ENTRY_PATH: playwrightEntryPath,
+        DEMO_SCRIPT_PATH: scriptPath,
+        ...(storageStatePath
+          ? { DEMO_STORAGE_STATE_PATH: storageStatePath }
+          : {}),
+        ...(profileDir ? { DEMO_PROFILE_DIR: profileDir } : {}),
+        ...(browserChannel ? { DEMO_BROWSER_CHANNEL: browserChannel } : {}),
+        ...(headed ? { DEMO_HEADED: "1" } : {}),
+        DEMO_TARGET_URL: targetUrl,
+      }),
+    },
+  );
 
   const timeline = parseTimeline(await readFile(timelinePath, "utf8"));
   assertCaptureGeometry(timeline, demoName);
-  const syncFlash = await detectSyncFlash(masterPath);
-  // Trim at the END of the sentinel run so no green frame reaches the render.
-  // Storyboard event times are measured from the flash start, so shift them
-  // back by the measured flash duration to stay aligned with the picture.
-  const flashDurationMs = syncFlash.endTimeMs - syncFlash.timeMs;
-  const synchronizedTimeline = {
-    ...timeline,
-    durationMs: Math.max(0, timeline.durationMs - flashDurationMs),
-    capture: {
-      ...timeline.capture,
-      syncFlashAt: syncFlash.endTimeMs,
-    },
-    events: timeline.events.map((event) => ({
-      ...event,
-      t: Math.max(0, event.t - flashDurationMs),
-    })),
-  };
-  assertCaptureGeometry(synchronizedTimeline, demoName);
   await writeSynchronizedTimelines({
     outputDirectory: outputDir,
     demoName,
-    content: serializeTimeline(synchronizedTimeline),
+    content: serializeTimeline(timeline),
   });
-  console.log(
-    `Clapperboard run at master frame ${syncFlash.frameIndex} x${syncFlash.runLength} (trim at ${syncFlash.endTimeMs.toFixed(2)}ms).`,
-  );
 
   const trimmedMasterPath = path.join(
     outputDir,
     `${demoName}-trimmed-master.mp4`,
   );
-  await createRemotionSource(
-    masterPath,
-    trimmedMasterPath,
-    syncFlash.endTimeMs,
-  );
+  await encodeScreencast(demoName, timeline, trimmedMasterPath);
 
   // The raw deliverable: the clean capture, no zoom/cursor/caption edit.
   const rawPath = path.join(outputDir, `${demoName}-raw.mp4`);
-  await runCommand(
-    "ffmpeg",
+  await runFfmpeg(
     [
       "-y",
       "-i",
@@ -649,7 +417,7 @@ async function main() {
       "+faststart",
       rawPath,
     ],
-    { name: "Raw deliverable transcode", cwd: demosRoot, env: systemEnv() },
+    "Raw deliverable transcode",
   );
 
   let editedPaths;
@@ -657,7 +425,7 @@ async function main() {
   if (!rawOnly) {
     editedPaths = await renderCompositions(
       demoName,
-      synchronizedTimeline,
+      timeline,
       trimmedMasterPath,
       formats,
       windowChrome,

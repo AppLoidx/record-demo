@@ -73,6 +73,43 @@ describe("parseCliArgs", () => {
     );
   });
 
+  it("defaults to a headless run on the bundled browser", () => {
+    const options = parseCliArgs(requiredArgs, "/engine");
+
+    expect(options.headed).toBe(false);
+    expect(options).not.toHaveProperty("profileDir");
+    expect(options).not.toHaveProperty("browserChannel");
+  });
+
+  it("accepts a profile directory, a browser channel and --headed", async () => {
+    const cwd = await temporaryDirectory();
+
+    const options = parseCliArgs(
+      [...requiredArgs, "--profile", ".", "--channel", "chrome", "--headed"],
+      cwd,
+    );
+
+    expect(options).toMatchObject({
+      profileDir: cwd,
+      browserChannel: "chrome",
+      headed: true,
+    });
+  });
+
+  it("rejects a missing profile directory", async () => {
+    const cwd = await temporaryDirectory();
+
+    expect(() =>
+      parseCliArgs([...requiredArgs, "--profile", "missing"], cwd),
+    ).toThrow(/Browser profile directory does not exist/);
+  });
+
+  it("lists valid channels when the channel is unknown", () => {
+    expect(() =>
+      parseCliArgs([...requiredArgs, "--channel", "firefox"], "/engine"),
+    ).toThrow(/Valid values: chrome, msedge/);
+  });
+
   it("resolves a valid storage state path relative to cwd", async () => {
     const cwd = await temporaryDirectory();
     const storageStatePath = path.join(cwd, "test.storage-state.json");

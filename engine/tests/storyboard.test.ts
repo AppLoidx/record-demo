@@ -218,7 +218,7 @@ describe("launchStoryboardPage", () => {
     vi.unstubAllEnvs();
   });
 
-  it("launches the app window on the target, applies env state, then re-navigates", async () => {
+  it("launches headless at the capture geometry, applies env state, then navigates", async () => {
     vi.stubEnv("DEMO_TARGET_URL", "https://app.example.org/dashboard");
     vi.stubEnv("DEMO_STORAGE_STATE_PATH", "/state/account.json");
     const calls: string[] = [];
@@ -246,10 +246,14 @@ describe("launchStoryboardPage", () => {
       "/profile",
       {
         launchPersistentContext: vi.fn(async (_userDataDir, options) => {
-          const appArgument = options.args?.find((arg: string) =>
-            arg.startsWith("--app="),
-          );
-          calls.push(`launch:${appArgument}`);
+          expect(options).toMatchObject({
+            executablePath: "/chromium",
+            headless: true,
+            viewport: { width: 1920, height: 1080 },
+            deviceScaleFactor: 1.5,
+          });
+          expect(options?.args).toContain("--force-device-scale-factor=1.5");
+          calls.push("launch");
           return context;
         }),
         readStorageState: vi.fn(async () => {
@@ -274,7 +278,7 @@ describe("launchStoryboardPage", () => {
 
     expect(result).toEqual({ clientErrors: [], context, page });
     expect(calls).toEqual([
-      "launch:--app=https://app.example.org/dashboard",
+      "launch",
       "readStorageState",
       "unlinkStorageState",
       "addCookies",
@@ -283,6 +287,31 @@ describe("launchStoryboardPage", () => {
       "pages",
       "goto:https://app.example.org/dashboard",
     ]);
+  });
+
+  it("uses an installed browser channel and a visible window when asked", async () => {
+    vi.stubEnv("DEMO_TARGET_URL", "https://app.example.org/");
+    vi.stubEnv("DEMO_BROWSER_CHANNEL", "chrome");
+    vi.stubEnv("DEMO_HEADED", "1");
+    const page = { goto: vi.fn(async () => {}), on: vi.fn() } as unknown as Page;
+    const context = {
+      addInitScript: vi.fn(async () => {}),
+      pages: vi.fn(() => []),
+      newPage: vi.fn(async () => page),
+    } as unknown as BrowserContext;
+    const launchPersistentContext = vi.fn(
+      async (_userDataDir: string, _options?: object) => context,
+    );
+
+    const result = await launchStoryboardPage("", "/profile", {
+      launchPersistentContext,
+    });
+
+    expect(result.page).toBe(page);
+    const options = launchPersistentContext.mock.calls[0]![1];
+    expect(options).toMatchObject({ channel: "chrome", headless: false });
+    expect(options).not.toHaveProperty("executablePath");
+    expect(page.goto).toHaveBeenCalledWith("https://app.example.org/");
   });
 
   it("warns and continues when the consumed state file cannot be deleted", async () => {

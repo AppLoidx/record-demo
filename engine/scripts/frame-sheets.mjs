@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { bundledTool } from "../lib/ffmpeg.mjs";
 import { parseTimeline, spotlightTotalDuration } from "../lib/timeline.ts";
 
 // Match the runtime TypeScript resolution used by the motion scorer.
@@ -23,6 +24,7 @@ registerHooks({
 const { createCameraPath } = await import("../lib/camera.ts");
 const { compositionFps } = await import("../remotion/theme.ts");
 const execFileAsync = promisify(execFile);
+const runTool = (tool, args) => execFileAsync(...bundledTool(tool, args));
 const engineRoot = fileURLToPath(new URL("../", import.meta.url));
 
 // Pure: durations come from the same live camera path used by the renderer.
@@ -57,7 +59,7 @@ async function requireFile(path, kind) {
 }
 
 async function probeVideo(videoPath) {
-  const { stdout } = await execFileAsync("ffprobe", [
+  const { stdout } = await runTool("ffprobe", [
     "-v", "error", "-select_streams", "v:0", "-show_entries",
     "format=duration:stream=width,height,avg_frame_rate,duration", "-of", "json", videoPath,
   ]);
@@ -82,7 +84,7 @@ async function writeSheet(videoPath, outputPath, sheet, video) {
       const filters = ["scale=640:-2", "setsar=1"];
       const label = `drawtext=text='${(timeMs / 1000).toFixed(2)}s':x=10:y=10:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.65`;
       const extract = async (withLabel) => {
-        await execFileAsync("ffmpeg", [
+        await runTool("ffmpeg", [
           "-hide_banner", "-loglevel", "error", "-y", "-ss", String(seekSeconds), "-i", videoPath,
           "-frames:v", "1", "-vf", [...filters, ...(withLabel ? [label] : [])].join(","), tilePath,
         ]);
@@ -96,7 +98,7 @@ async function writeSheet(videoPath, outputPath, sheet, video) {
         await extract(false);
       }
     }
-    await execFileAsync("ffmpeg", [
+    await runTool("ffmpeg", [
       "-hide_banner", "-loglevel", "error", "-y", "-framerate", "1", "-i", join(temporaryDir, "%02d.png"),
       "-vf", "tile=4x3:nb_frames=12", "-frames:v", "1", outputPath,
     ]);
