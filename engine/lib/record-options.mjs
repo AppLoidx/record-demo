@@ -181,6 +181,12 @@ export function parseCliArgs(cliArgs, cwd = process.cwd()) {
     }
   }
 
+  if (profileDir && storageStatePath) {
+    throw new Error(
+      `${usage}\nUse --profile or --storage-state, not both: the one-shot state would be written into the profile.`,
+    );
+  }
+
   const browserChannel = values.get("--channel");
   if (browserChannel !== undefined && !browserChannels.includes(browserChannel)) {
     throw new Error(

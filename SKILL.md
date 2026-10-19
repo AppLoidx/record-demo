@@ -101,18 +101,17 @@ before recording anything that holds real customer data.
 
 | Bring | Flag | Covers |
 |---|---|---|
-| A Chrome profile the user signed into | `--profile <dir>` (+ `--channel chrome` if Google Chrome created it) | Any login: SSO, OTP, passkeys, IndexedDB and sessionStorage apps. Reused across takes |
+| A profile the user signed into via `playwright open` | `--profile <dir>` (+ the same `--channel` used to create it) | Any login: SSO, OTP, passkeys, IndexedDB and sessionStorage apps. Reused across takes |
 | A Playwright storage-state file | `--storage-state <path>` | Cookies + localStorage only. One-shot: deleted right after loading |
 
-**Profile.** Use a dedicated profile directory, never the user's everyday one
-(Chrome and Playwright do not support automating the default profile, and a run may change it).
-To create one, the user runs Chrome once with
-`--user-data-dir=<dir>` (or `pnpm exec playwright open --channel chrome
---user-data-dir <dir> <url>` from `engine/`), signs in, and closes the window. Close
-every window using that profile before recording; a locked profile fails to launch.
-Chrome encrypts cookies per browser build on macOS and Windows, so a profile made in
-installed Google Chrome needs `--channel chrome`, and one made with the bundled
-browser needs no channel.
+**Profile.** Create it with Playwright so the recorder can read its cookies.
+From `engine/`, the user runs
+`pnpm exec playwright open [--channel chrome] --user-data-dir <dir> <url>`, signs in,
+and closes the window. Record with the same `--channel` (or none). Playwright stores
+cookies with its own key, so a profile made by a normal Chrome window, or the user's
+everyday profile, records logged out. Close every window using the profile before
+recording; a locked profile fails to launch. `--profile` and `--storage-state` are
+mutually exclusive.
 
 **Storage state.** The user can make one without code: from `engine/`, run
 `pnpm exec playwright open --save-storage "$storageStatePath" <url>`, sign in, and
@@ -225,7 +224,7 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
 | `Invalid demo viewport ...` abort | Geometry drifted - fix launch flags, never relax the assertion. |
 | `The screencast captured no frames` | The page never painted after the first step started; check the seed waits for real content. |
 | Raw video frames are 1920x1080 or soft | `--force-device-scale-factor` was dropped from the launch args; frames must be 2880x1620. |
-| Logged-out screen with `--profile` | Profile made by another browser build (add or drop `--channel chrome`), or a Chrome window still holds the profile. |
+| Logged-out screen with `--profile` | Profile not created with `playwright open`, or created with a different `--channel`; recreate it as in "Sites behind a login". |
 | A stretch of video looks frozen | Expected on a static page: Chrome sends a frame only on repaint, and the last one holds. |
 | Captions/cursor drift over the clip | Frame times come from Chrome paint timestamps on the storyboard clock (`lib/frames.ts`); never re-time by frame count. |
 | Spotlight cutout off its target | Rect raced a smooth scroll - measureTarget's stability loop should hold; if it recurs, raise its timeout. |

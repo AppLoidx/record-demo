@@ -63,10 +63,10 @@ prompt.
 
 ### Sites behind a login
 
-You log in; the agent records. Either sign in once in a dedicated Chrome profile and
-pass `--profile <dir>` (works for any login, reused across takes), or save a
-storage-state file without code and pass `--storage-state <path>` (one-shot, deleted
-after loading):
+You log in; the agent records. Either sign in once in a dedicated profile made with
+`pnpm exec playwright open --user-data-dir <dir> <url>` and pass `--profile <dir>`
+(works for any login, reused across takes), or save a storage-state file and pass
+`--storage-state <path>` (one-shot, deleted after loading):
 
 ```bash
 cd ~/.claude/skills/record-demo/engine

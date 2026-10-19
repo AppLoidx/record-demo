@@ -373,7 +373,7 @@ describe("Storyboard.spotlightOff", () => {
   });
 
   it("rewrites the last spotlight hold so its fade-out starts now", () => {
-    vi.spyOn(performance, "now").mockReturnValue(2_000);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
     const storyboard = new Storyboard("spotlight-off", {} as Page, {
       width: 1920,
       height: 1080,
@@ -423,7 +423,7 @@ describe("Storyboard.outro", () => {
   });
 
   it("adds the closing event before waiting for its wall time", async () => {
-    vi.spyOn(performance, "now").mockReturnValue(1_250);
+    vi.spyOn(Date, "now").mockReturnValue(1_250);
     const { page, storyboard } = createStoryboard();
 
     await storyboard.outro("Any website. One storyboard.");
@@ -513,6 +513,7 @@ describe("Storyboard motion recording", () => {
 
   it("uses the target's shorter dimension, then settles before clicking and timestamping", async () => {
     let time = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => time);
     vi.spyOn(performance, "now").mockImplementation(() => time);
     let clickedAt = -1;
     const page = {

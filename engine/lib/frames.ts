@@ -2,12 +2,9 @@ export type CapturedFrame = { file: string; t: number };
 
 export type FrameManifest = { frames: CapturedFrame[] };
 
-/** Shortest duration the concat demuxer receives; one 60fps tick. */
-const MIN_FRAME_MS = 1_000 / 60;
-
 /**
  * Maps a Chrome screencast timestamp (epoch seconds) onto the storyboard
- * clock (ms since t=0). Frames painted before t=0 map to 0.
+ * clock (ms since t=0, same wall clock). Frames painted before t=0 map to 0.
  */
 export function frameTimeMs(
   timestampSeconds: number | undefined,
@@ -39,34 +36,49 @@ export function parseFrameManifest(source: string): FrameManifest {
 }
 
 /**
- * Builds an ffmpeg concat-demuxer list that holds each frame until the next
- * one was painted. Chrome only sends a frame when the page repaints, so a
- * static stretch is one frame with a long duration. The first frame starts at
- * t=0, the last one holds until the end of the timeline, and frames that share
- * a timestamp keep only the latest paint.
+ * Picks the frame on screen at every output tick: the latest paint at or
+ * before the tick (the first frame covers anything earlier). Chrome only sends
+ * a frame when the page repaints, so a static stretch repeats one file, and
+ * the last paint holds until the end of the timeline. Every tick is anchored
+ * to its own time, so paint jitter never accumulates into drift.
  */
-export function buildConcatList(frames: CapturedFrame[], durationMs: number) {
+export function framesForTicks(
+  frames: CapturedFrame[],
+  durationMs: number,
+  fps: number,
+) {
   const ordered = [...frames].sort((a, b) => a.t - b.t);
-  const distinct: CapturedFrame[] = [];
-  for (const frame of ordered) {
-    if (distinct.length > 0 && distinct.at(-1)!.t === frame.t) {
-      distinct[distinct.length - 1] = frame;
-    } else {
-      distinct.push(frame);
-    }
-  }
-  if (distinct.length === 0) {
+  if (ordered.length === 0) {
     throw new Error("The screencast captured no frames");
   }
 
-  const lines: string[] = [];
-  distinct.forEach((frame, index) => {
-    const start = index === 0 ? 0 : frame.t;
-    const end = distinct[index + 1]?.t ?? Math.max(durationMs, frame.t);
-    const holdMs = Math.max(MIN_FRAME_MS, end - start);
-    lines.push(`file '${frame.file}'`, `duration ${(holdMs / 1_000).toFixed(6)}`);
-  });
-  // The demuxer ignores the last entry's duration unless the file repeats.
-  lines.push(`file '${distinct.at(-1)!.file}'`);
-  return `${lines.join("\n")}\n`;
+  const tickCount = Math.max(1, Math.ceil((durationMs / 1_000) * fps));
+  const files: string[] = [];
+  let current = 0;
+  for (let tick = 0; tick < tickCount; tick += 1) {
+    const tickMs = (tick * 1_000) / fps;
+    while (current + 1 < ordered.length && ordered[current + 1]!.t <= tickMs) {
+      current += 1;
+    }
+    files.push(ordered[current]!.file);
+  }
+  return files;
+}
+
+/** Reads width/height from a baseline or progressive JPEG header. */
+export function jpegSize(data: Uint8Array) {
+  let offset = 2;
+  while (offset + 9 < data.length) {
+    if (data[offset] !== 0xff) break;
+    const marker = data[offset + 1]!;
+    const length = (data[offset + 2]! << 8) | data[offset + 3]!;
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return {
+        height: (data[offset + 5]! << 8) | data[offset + 6]!,
+        width: (data[offset + 7]! << 8) | data[offset + 8]!,
+      };
+    }
+    offset += 2 + length;
+  }
+  throw new Error("Could not read JPEG dimensions");
 }

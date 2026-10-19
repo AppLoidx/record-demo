@@ -22,10 +22,8 @@ const {
 } = await import("node:fs/promises");
 const path = await import("node:path");
 const { fileURLToPath } = await import("node:url");
-const { bundledTool } = await import("./lib/ffmpeg.mjs");
-const { buildConcatList, parseFrameManifest } = await import(
-  "./lib/frames.ts",
-);
+const { bundledTool, packageCli } = await import("./lib/ffmpeg.mjs");
+const { encodeScreencast } = await import("./lib/encode-screencast.mjs");
 const { encodeGif, gifPalettePath, logGifResult } = await import(
   "./lib/gif.mjs"
 );
@@ -66,8 +64,6 @@ function launchOwned(name, command, args, options = {}) {
     env: options.env ?? systemEnv(),
     stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
     detached: !isWindows,
-    // pnpm is a .cmd shim on Windows, which only a shell can start.
-    shell: isWindows && command === "pnpm",
   });
   ownedChildren.set(child, name);
   child.once("exit", () => ownedChildren.delete(child));
@@ -202,49 +198,26 @@ async function runFfmpeg(args, name) {
   });
 }
 
-// Chrome sends a frame only when the page repaints, so each frame holds until
-// the next paint; resampling to a constant rate gives Remotion a normal video.
-async function encodeScreencast(demoName, timeline, outputPath) {
-  const framesDir = path.join(outputDir, `.frames-${demoName}`);
-  const manifestPath = path.join(outputDir, `${demoName}-frames.json`);
-  ephemeralPaths.add(framesDir);
-  ephemeralPaths.add(manifestPath);
-  const { frames } = parseFrameManifest(await readFile(manifestPath, "utf8"));
-  const listPath = path.join(framesDir, "frames.txt");
-  await writeFile(listPath, buildConcatList(frames, timeline.durationMs), "utf8");
+async function encodeCapture(demoName, timeline, outputPath) {
+  const { frameCount, tickCount } = await encodeScreencast({
+    framesDir: path.join(outputDir, `.frames-${demoName}`),
+    manifestPath: path.join(outputDir, `${demoName}-frames.json`),
+    durationMs: timeline.durationMs,
+    fps: captureFps,
+    expectedSize: {
+      width: expectedViewport.width * expectedViewport.deviceScaleFactor,
+      height: expectedViewport.height * expectedViewport.deviceScaleFactor,
+    },
+    outputPath,
+    spawnProcess: (command, args) =>
+      launchOwned("Screencast encode", command, args, {
+        env: systemEnv(),
+        stdio: ["pipe", "ignore", "pipe"],
+      }),
+  });
   console.log(
-    `Encoding ${frames.length} screencast frames at ${captureFps}fps.`,
+    `Encoded ${frameCount} screencast frames into ${tickCount} frames at ${captureFps}fps.`,
   );
-  await runFfmpeg(
-    [
-      "-y",
-      "-f",
-      "concat",
-      "-safe",
-      "0",
-      "-i",
-      listPath,
-      "-an",
-      "-fps_mode",
-      "cfr",
-      "-r",
-      String(captureFps),
-      "-t",
-      (timeline.durationMs / 1_000).toFixed(3),
-      "-c:v",
-      "libx264",
-      "-preset",
-      "medium",
-      "-crf",
-      "0",
-      "-pix_fmt",
-      "yuv420p",
-      "-movflags",
-      "+faststart",
-      outputPath,
-    ],
-    "Screencast encode",
-  )
 }
 
 async function renderCompositions(
@@ -279,10 +252,7 @@ async function renderCompositions(
     const outputPath = path.join(outputDir, `${demoName}-${preset}.mp4`);
     console.log(`Rendering ${preset} at 60fps.`);
     await runCommand(
-      "pnpm",
-      [
-        "exec",
-        "remotion",
+      ...packageCli("@remotion/cli", "remotion", [
         "render",
         "remotion/Root.tsx",
         preset,
@@ -296,7 +266,7 @@ async function renderCompositions(
         "--timeout=120000",
         "--muted",
         "--overwrite",
-      ],
+      ]),
       {
         name: `Remotion ${preset} render`,
         cwd: demosRoot,
@@ -356,15 +326,16 @@ async function main() {
   await mkdir(outputDir, { recursive: true });
   const playwrightEntryPath = await createPlaywrightEntry(scriptPath);
   console.log(`Recording external target ${targetUrl}.`);
+  // Register the capture files first so a failed or interrupted take never
+  // leaves screenshots of a signed-in session on disk.
+  ephemeralPaths.add(path.join(outputDir, `.frames-${demoName}`));
+  ephemeralPaths.add(path.join(outputDir, `${demoName}-frames.json`));
   await runCommand(
-    "pnpm",
-    [
-      "exec",
-      "playwright",
+    ...packageCli("@playwright/test", "playwright", [
       "test",
       playwrightEntryPath,
       "--config=playwright.config.ts",
-    ],
+    ]),
     {
       name: "Playwright storyboard",
       cwd: demosRoot,
@@ -395,7 +366,7 @@ async function main() {
     outputDir,
     `${demoName}-trimmed-master.mp4`,
   );
-  await encodeScreencast(demoName, timeline, trimmedMasterPath);
+  await encodeCapture(demoName, timeline, trimmedMasterPath);
 
   // The raw deliverable: the clean capture, no zoom/cursor/caption edit.
   const rawPath = path.join(outputDir, `${demoName}-raw.mp4`);

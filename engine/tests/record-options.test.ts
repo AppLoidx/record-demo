@@ -104,6 +104,21 @@ describe("parseCliArgs", () => {
     ).toThrow(/Browser profile directory does not exist/);
   });
 
+  it("rejects a storage state combined with a profile", async () => {
+    const cwd = await temporaryDirectory();
+    await writeFile(
+      path.join(cwd, "s.storage-state.json"),
+      JSON.stringify({ cookies: [], origins: [] }),
+    );
+
+    expect(() =>
+      parseCliArgs(
+        [...requiredArgs, "--profile", ".", "--storage-state", "s.storage-state.json"],
+        cwd,
+      ),
+    ).toThrow(/not both/);
+  });
+
   it("lists valid channels when the channel is unknown", () => {
     expect(() =>
       parseCliArgs([...requiredArgs, "--channel", "firefox"], "/engine"),

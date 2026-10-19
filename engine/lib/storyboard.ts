@@ -244,8 +244,10 @@ export class Storyboard {
   async ensureStarted() {
     if (this.started) return;
     this.started = true;
-    this.startedAt = performance.now();
-    await this.screencast?.start(this.page, Date.now());
+    // Events and Chrome frame timestamps share the wall clock, so a clock
+    // step during a take moves both together.
+    this.startedAt = Date.now();
+    await this.screencast?.start(this.page, this.startedAt);
     await this.placeCursor();
     // Opening beat: let the viewer read the screen before anything moves.
     await this.page.waitForTimeout(1_400);
@@ -559,7 +561,7 @@ export class Storyboard {
   }
 
   private now() {
-    return Math.max(0, Math.round(performance.now() - this.startedAt));
+    return Math.max(0, Math.round(Date.now() - this.startedAt));
   }
 }
 

@@ -31,6 +31,7 @@ export class Screencast {
   private readonly writes = new Set<Promise<void>>();
   private nextIndex = 0;
   private originEpochMs = 0;
+  private writeError: unknown;
 
   constructor(private readonly framesDir: string) {}
 
@@ -56,6 +57,11 @@ export class Screencast {
   async stop(): Promise<CapturedFrame[]> {
     await this.detach();
     await Promise.all(this.writes);
+    if (this.writeError) {
+      throw new Error("Could not save screencast frames", {
+        cause: this.writeError,
+      });
+    }
     return [...this.frames].sort((a, b) => a.t - b.t);
   }
 
@@ -74,9 +80,14 @@ export class Screencast {
     const write = writeFile(
       path.join(this.framesDir, file),
       Buffer.from(frame.data, "base64"),
-    ).then(() => {
-      this.frames.push({ file, t });
-    });
+    ).then(
+      () => {
+        this.frames.push({ file, t });
+      },
+      (error: unknown) => {
+        this.writeError ??= error;
+      },
+    );
     this.writes.add(write);
     void write.finally(() => this.writes.delete(write));
   }
