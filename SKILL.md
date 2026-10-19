@@ -60,16 +60,23 @@ server first. Print the serving SHA into the take notes so every recording is at
 
 ## Record
 
-Require Node >= 22.18 (nvm or system), `ffmpeg`, `Xvfb`, and `xdpyinfo`. Install
-dependencies once inside `engine/` with `pnpm install`.
+Runs on macOS, Windows and Linux. Require Node >= 22.18 and pnpm; install
+dependencies once inside `engine/` with `pnpm install` (this also fetches the
+browser and a bundled ffmpeg). No display server or system ffmpeg is needed:
+Chrome runs headless and hands its own frames to the engine over the DevTools
+screencast.
 
 ```bash
 node <skill-dir>/engine/record.mjs \
   --script /absolute/or/cwd-relative/demo.demo.ts \
   --url https://example.org \
   [--name output-slug] [--formats 16x9,1x1,9x16] \
-  [--chrome none|macos|browser] [--storage-state <path>] [--raw]
+  [--chrome none|macos|browser] [--raw] [--headed] \
+  [--storage-state <path> | --profile <dir> [--channel chrome|msedge]]
 ```
+
+`--headed` shows the browser window while it records (useful for watching a first
+take); the capture is identical either way.
 
 Use `--formats` to select one or more composition presets (default `16x9`) and
 `--chrome` to choose the rendered window frame (default `none`). Formats render in
@@ -86,26 +93,36 @@ The runner prints absolute deliverable paths when it finishes. Treat live-site
 reproducibility as the target site's responsibility and never embed real credentials in
 a storyboard.
 
-## Authenticated sites
+## Sites behind a login
 
-Record authenticated flows only with staging or test accounts; never use production
-credentials. The agent should first log in once with its own tooling, using a headless
-Playwright script. If sign-in requires an emailed OTP or magic link, the preferred
-route is the agent's own mail access - a connected Gmail connector/MCP on Claude Code,
-or a mail CLI on other runtimes - so it reads the code itself; otherwise ask the user
-to paste it. After login, save the session with
-`await context.storageState({ path: storageStatePath })`, where `storageStatePath`
-is a one-shot temporary path created as
-`storageStatePath="$(mktemp -d)/<account>.storage-state.json"`. Then run the
-recording command with `--storage-state "$storageStatePath"`.
+Getting a logged-in session is the user's job; the recorder only accepts one. Pick
+the account and workspace whose data is fine to show on video, and ask the user
+before recording anything that holds real customer data.
 
-Playwright `storageState` restores cookies and localStorage only. Apps that keep auth
-in IndexedDB or sessionStorage will silently record a logged-out screen, so verify the
-authenticated page before capturing. The storage-state file is a secret: never print
-or commit it. The recorder deletes it immediately after loading it; it is a one-shot
-handoff, so re-recording requires a fresh login and nothing auth-related is left on
-disk. The one-off login helper script also holds credentials: keep it temporary and
-never commit it.
+| Bring | Flag | Covers |
+|---|---|---|
+| A profile the user signed into via `playwright open` | `--profile <dir>` (+ the same `--channel` used to create it) | Any login: SSO, OTP, passkeys, IndexedDB and sessionStorage apps. Reused across takes |
+| A Playwright storage-state file | `--storage-state <path>` | Cookies + localStorage only. One-shot: deleted right after loading |
+
+**Profile.** Create it with Playwright so the recorder can read its cookies.
+From `engine/`, the user runs
+`pnpm exec playwright open [--channel chrome] --user-data-dir <dir> <url>`, signs in,
+and closes the window. Record with the same `--channel` (or none). Playwright stores
+cookies with its own key, so a profile made by a normal Chrome window, or the user's
+everyday profile, records logged out. Close every window using the profile before
+recording; a locked profile fails to launch. `--profile` and `--storage-state` are
+mutually exclusive.
+
+**Storage state.** The user can make one without code: from `engine/`, run
+`pnpm exec playwright open --save-storage "$storageStatePath" <url>`, sign in, and
+close the window. Use a one-shot temporary path such as
+`storageStatePath="$(mktemp -d)/<account>.storage-state.json"`. Scripts can save it
+with `await context.storageState({ path: storageStatePath })`. Apps that keep auth
+in IndexedDB or sessionStorage record a logged-out screen this way; use a profile.
+
+Both are secrets: never print, commit or upload them. Verify the authenticated page
+in the seed (wait for a node only a signed-in user sees) so a logged-out take fails
+instead of rendering.
 
 ## Edit a recorded demo in Remotion Studio
 
@@ -182,7 +199,7 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
    dead-air WARNs mean a static stretch >= 3.5s with under 40px of cursor travel -
    re-pace or caption it.
 3. `node scripts/prove-composition.mjs` after engine changes.
-4. **Watch the actual render**: `ffmpeg -i out/<name>-16x9.mp4 -vf fps=1 out/frames/%03d.png`
+4. **Watch the actual render**: `pnpm exec remotion ffmpeg -i out/<name>-16x9.mp4 -vf fps=1 out/frames/%03d.png`
    and read the frames. Zoom clipping, caption lag, cutout desync and on-screen dev URLs
    are invisible in a green test run.
 5. **Review every move as a frame sheet**: `node scripts/frame-sheets.mjs <name>` writes one
@@ -205,9 +222,11 @@ One thing moves at a time: camera, cursor, or page. Every scene is these beats, 
 | Symptom | Cause / fix |
 |---|---|
 | `Invalid demo viewport ...` abort | Geometry drifted - fix launch flags, never relax the assertion. |
-| Cursor offset ~174px vertically | Chrome ran tabbed, not `--app`. |
-| Could not find clapperboard frames | Detector tolerance is 64 (external captures average impure); if it still misses, check the capture isn't black (Chrome on wrong DISPLAY). |
-| Captions/cursor drift over the clip | Clapperboard sync - don't wall-clock subtract. |
+| `The screencast captured no frames` | The page never painted after the first step started; check the seed waits for real content. |
+| Raw video frames are 1920x1080 or soft | `--force-device-scale-factor` was dropped from the launch args; frames must be 2880x1620. |
+| Logged-out screen with `--profile` | Profile not created with `playwright open`, or created with a different `--channel`; recreate it as in "Sites behind a login". |
+| A stretch of video looks frozen | Expected on a static page: Chrome sends a frame only on repaint, and the last one holds. |
+| Captions/cursor drift over the clip | Frame times come from Chrome paint timestamps on the storyboard clock (`lib/frames.ts`); never re-time by frame count. |
 | Spotlight cutout off its target | Rect raced a smooth scroll - measureTarget's stability loop should hold; if it recurs, raise its timeout. |
 | Words cut mid-letter at crop edge | `zoomTo(locator, { padding: 120 })` for modals. |
 | Zoom clips content off-frame | `maximumScale` taste issue (1.45 works), not a clamp bug. |

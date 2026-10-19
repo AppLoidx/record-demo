@@ -7,6 +7,8 @@ if (nodeMajor < 22) {
 }
 
 const { spawn } = await import("node:child_process");
+const { bundledTool, packageCli } = await import("../lib/ffmpeg.mjs");
+const { systemEnv } = await import("../lib/record-env.mjs");
 const {
   mkdir,
   readFile,
@@ -28,23 +30,10 @@ const sourcePath = path.join(publicDir, sourceName);
 const propsPath = path.join(outputDir, "composition-proof-props.json");
 const presets = compositionPresets.map(({ id }) => id);
 
-function systemEnv() {
-  return {
-    HOME: process.env.HOME,
-    LANG: process.env.LANG ?? "C.UTF-8",
-    LOGNAME: process.env.LOGNAME,
-    PATH: `${path.dirname(process.execPath)}:${process.env.PATH ?? "/usr/bin:/bin"}`,
-    SHELL: process.env.SHELL,
-    TERM: process.env.TERM,
-    TMPDIR: process.env.TMPDIR,
-    USER: process.env.USER,
-    XDG_CACHE_HOME: process.env.XDG_CACHE_HOME,
-    XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
-    XDG_DATA_HOME: process.env.XDG_DATA_HOME,
-  };
-}
-
 function run(command, args, { capture = false } = {}) {
+  if (command === "ffmpeg" || command === "ffprobe") {
+    [command, args] = bundledTool(command, args);
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: demosRoot,
@@ -68,17 +57,41 @@ function run(command, args, { capture = false } = {}) {
   });
 }
 
+async function writeTestPattern(outputPath) {
+  const { chromium } = await import("@playwright/test");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 1920, height: 1080 },
+      deviceScaleFactor: 1.5,
+    });
+    await page.setContent(`<body style="margin:0;height:100vh;background:
+      repeating-linear-gradient(45deg,#1b2a4a 0 60px,#25406f 60px 120px)">
+      <div style="font:bold 160px sans-serif;color:#fff;padding:120px">
+      record-demo composition proof</div></body>`);
+    await page.screenshot({ path: outputPath });
+  } finally {
+    await browser.close();
+  }
+}
+
 async function main() {
   const timeline = parseTimeline(await readFile(fixturePath, "utf8"));
   const durationSeconds = Math.max(1, timeline.durationMs / 1_000 + 0.5);
   await mkdir(outputDir, { recursive: true });
 
+  // The bundled ffmpeg has no test-pattern sources, so Chromium paints one at
+  // the capture size and ffmpeg loops it.
+  const patternPath = path.join(outputDir, "composition-proof-pattern.png");
+  await writeTestPattern(patternPath);
   await run("ffmpeg", [
     "-y",
-    "-f",
-    "lavfi",
+    "-loop",
+    "1",
+    "-framerate",
+    "60",
     "-i",
-    "testsrc2=size=2880x1620:rate=30",
+    patternPath,
     "-t",
     durationSeconds.toFixed(3),
     "-an",
@@ -112,9 +125,7 @@ async function main() {
       outputDir,
       `composition-proof-${preset}.mp4`,
     );
-    await run("pnpm", [
-      "exec",
-      "remotion",
+    await run(...packageCli("@remotion/cli", "remotion", [
       "render",
       "remotion/Root.tsx",
       preset,
@@ -126,7 +137,7 @@ async function main() {
       "--muted",
       "--overwrite",
       "--scale=0.25",
-    ]);
+    ]));
 
     if ((await stat(outputPath)).size === 0) {
       throw new Error(`Composition proof output is empty for ${preset}`);

@@ -19,6 +19,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { moveCursor, type CursorPoint } from "./cursor";
+import type { FrameManifest } from "./frames";
+import { Screencast } from "./screencast";
 import { demoTheme } from "../remotion/theme";
 import {
   serializeTimeline,
@@ -27,8 +29,7 @@ import {
   type TimelineEvent,
 } from "./timeline";
 
-const CAPTURE_FPS = 30;
-export const CLAPPERBOARD_COLOR = "#00ff00";
+const CAPTURE_FPS = 60;
 const EXPECTED_VIEWPORT = {
   width: 1920,
   height: 1080,
@@ -44,6 +45,14 @@ const TARGET_STABILITY_INTERVAL_MS = 150;
 const TARGET_STABILITY_TIMEOUT_MS = 1_200;
 const demosRoot = fileURLToPath(new URL("..", import.meta.url));
 const outputPath = path.join(demosRoot, "out", "timeline.json");
+
+export function frameDirectoryPath(name: string) {
+  return path.join(demosRoot, "out", `.frames-${name}`);
+}
+
+export function frameManifestPath(name: string) {
+  return path.join(demosRoot, "out", `${name}-frames.json`);
+}
 const DEFAULT_APP_URL = "https://example.org";
 
 type Viewport = Timeline["viewport"];
@@ -117,20 +126,20 @@ export async function launchStoryboardPage(
     dependencies.readStorageState ??
     ((statePath) => readFile(statePath, "utf8"));
   const unlinkStorageState = dependencies.unlinkStorageState ?? unlink;
+  const channel = process.env.DEMO_BROWSER_CHANNEL;
   const context = await launchPersistentContext(userDataDir, {
-    executablePath,
-    headless: false,
+    ...(channel ? { channel } : { executablePath }),
+    headless: process.env.DEMO_HEADED !== "1",
     baseURL: new URL(appUrl).origin,
-    viewport: null,
+    viewport: {
+      width: EXPECTED_VIEWPORT.width,
+      height: EXPECTED_VIEWPORT.height,
+    },
+    deviceScaleFactor: EXPECTED_VIEWPORT.deviceScaleFactor,
     args: [
-      // Always launch the app window on the real target: `--app=about:blank`
-      // silently degrades to a tabbed window, which eats 87 CSS px of viewport
-      // and trips the geometry assertion. The unauthenticated first paint is
-      // pre-clapperboard, so it never reaches the deliverable.
-      `--app=${appUrl}`,
-      "--window-position=0,0",
-      "--window-size=1920,1080",
-      "--force-device-scale-factor=1.5",
+      // Without the flag the screencast delivers CSS-pixel frames (1920x1080)
+      // even though the page renders at DSF 1.5.
+      `--force-device-scale-factor=${EXPECTED_VIEWPORT.deviceScaleFactor}`,
       "--test-type",
       "--disable-infobars",
       "--no-sandbox",
@@ -172,11 +181,10 @@ export async function launchStoryboardPage(
     }
   });
 
-  const page = context.pages()[0];
-  if (!page) throw new Error("Chromium app mode did not create a page");
+  const page = context.pages()[0] ?? (await context.newPage());
   captureClientErrors(page, clientErrors);
-  // Re-navigate so the restored cookies + localStorage take effect.
-  if (storageStatePath) await page.goto(appUrl);
+  // Navigate after the session is restored so cookies + localStorage apply.
+  await page.goto(appUrl);
 
   return { clientErrors, context, page };
 }
@@ -220,6 +228,7 @@ export class Storyboard {
     private readonly name: string,
     private page: Page,
     private readonly viewport: Viewport,
+    private readonly screencast?: Screencast,
   ) {
     this.cursor = {
       x: viewport.width / 2,
@@ -227,19 +236,18 @@ export class Storyboard {
     };
   }
 
-  start() {
-    this.startedAt = performance.now();
-  }
-
   /**
-   * Flashes the clapperboard and establishes t=0 lazily, on the first step.
+   * Starts the screencast and establishes t=0 lazily, on the first step.
    * Seeding runs before this, so the video opens on real data, never on a
    * loading skeleton.
    */
   async ensureStarted() {
     if (this.started) return;
     this.started = true;
-    await flashClapperboard(this.page, this);
+    // Events and Chrome frame timestamps share the wall clock, so a clock
+    // step during a take moves both together.
+    this.startedAt = Date.now();
+    await this.screencast?.start(this.page, this.startedAt);
     await this.placeCursor();
     // Opening beat: let the viewer read the screen before anything moves.
     await this.page.waitForTimeout(1_400);
@@ -325,6 +333,7 @@ export class Storyboard {
     this.page = page;
     await page.waitForLoadState("domcontentloaded");
     await page.bringToFront();
+    if (this.started) await this.screencast?.attach(page);
     await page.mouse.move(this.cursor.x, this.cursor.y);
   }
 
@@ -337,6 +346,7 @@ export class Storyboard {
     await this.page.close();
     this.page = previousPage;
     await previousPage.bringToFront();
+    if (this.started) await this.screencast?.attach(previousPage);
     await previousPage.mouse.move(this.cursor.x, this.cursor.y);
     return previousPage;
   }
@@ -466,9 +476,17 @@ export class Storyboard {
       durationMs: this.now(),
       events: this.events,
     };
+    const frames = await this.screencast?.stop();
 
     await mkdir(path.dirname(outputPath), { recursive: true });
     await writeFile(outputPath, serializeTimeline(timeline), "utf8");
+    if (frames) {
+      await writeFile(
+        frameManifestPath(this.name),
+        `${JSON.stringify({ frames } satisfies FrameManifest)}\n`,
+        "utf8",
+      );
+    }
   }
 
   private async measureTarget(
@@ -543,7 +561,7 @@ export class Storyboard {
   }
 
   private now() {
-    return Math.max(0, Math.round(performance.now() - this.startedAt));
+    return Math.max(0, Math.round(Date.now() - this.startedAt));
   }
 }
 
@@ -709,34 +727,17 @@ async function readAndAssertViewport(page: Page): Promise<Viewport> {
   }, EXPECTED_VIEWPORT);
 }
 
-async function flashClapperboard(page: Page, storyboard: Storyboard) {
-  storyboard.start();
-  await page.evaluate((color) => {
-    const sentinel = document.createElement("div");
-    sentinel.dataset.demoClapperboard = "true";
-    Object.assign(sentinel.style, {
-      position: "fixed",
-      inset: "0",
-      zIndex: "2147483647",
-      background: color,
-      pointerEvents: "none",
-    });
-    document.documentElement.append(sentinel);
-  }, CLAPPERBOARD_COLOR);
-  // 4 frames: cold-compile CPU load can drop capture frames, and the detector
-  // needs at least 2 consecutive sentinel frames to survive.
-  await page.waitForTimeout(Math.ceil((4 * 1_000) / CAPTURE_FPS));
-  await page.evaluate(() => {
-    document.querySelector("[data-demo-clapperboard]")?.remove();
-  });
-}
-
 async function runStoryboard(
   name: string,
   action: (storyboard: Storyboard) => Promise<void>,
 ) {
-  const executablePath = await resolveChromiumExecutable();
-  const userDataDir = await mkdtemp(path.join(tmpdir(), "record-demo-"));
+  const executablePath = process.env.DEMO_BROWSER_CHANNEL
+    ? ""
+    : await resolveChromiumExecutable();
+  // A user-supplied profile carries the user's own login; never delete it.
+  const profileDir = process.env.DEMO_PROFILE_DIR;
+  const userDataDir =
+    profileDir ?? (await mkdtemp(path.join(tmpdir(), "record-demo-")));
   const { clientErrors, context, page } = await launchStoryboardPage(
     executablePath,
     userDataDir,
@@ -748,7 +749,12 @@ async function runStoryboard(
     const viewport = await readAndAssertViewport(page);
     await page.waitForLoadState("load");
     await page.waitForTimeout(250);
-    const storyboard = new Storyboard(name, page, viewport);
+    const storyboard = new Storyboard(
+      name,
+      page,
+      viewport,
+      new Screencast(frameDirectoryPath(name)),
+    );
 
     try {
       await action(storyboard);
@@ -759,7 +765,7 @@ async function runStoryboard(
     throw storyboardFailure(error, clientErrors);
   } finally {
     await context.close();
-    await rm(userDataDir, { recursive: true, force: true });
+    if (!profileDir) await rm(userDataDir, { recursive: true, force: true });
   }
 }
 

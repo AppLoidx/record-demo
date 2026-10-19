@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { bundledTool } from "../lib/ffmpeg.mjs";
 import { parseTimeline, spotlightTotalDuration } from "../lib/timeline.ts";
 
 // Match the runtime TypeScript resolution used by the motion scorer.
@@ -23,6 +24,7 @@ registerHooks({
 const { createCameraPath } = await import("../lib/camera.ts");
 const { compositionFps } = await import("../remotion/theme.ts");
 const execFileAsync = promisify(execFile);
+const runTool = (tool, args) => execFileAsync(...bundledTool(tool, args));
 const engineRoot = fileURLToPath(new URL("../", import.meta.url));
 
 // Pure: durations come from the same live camera path used by the renderer.
@@ -57,7 +59,7 @@ async function requireFile(path, kind) {
 }
 
 async function probeVideo(videoPath) {
-  const { stdout } = await execFileAsync("ffprobe", [
+  const { stdout } = await runTool("ffprobe", [
     "-v", "error", "-select_streams", "v:0", "-show_entries",
     "format=duration:stream=width,height,avg_frame_rate,duration", "-of", "json", videoPath,
   ]);
@@ -71,35 +73,34 @@ async function probeVideo(videoPath) {
   return { durationMs, width: stream.width, height: stream.height, fps: numerator / denominator || compositionFps };
 }
 
-async function writeSheet(videoPath, outputPath, sheet, video) {
+// The bundled ffmpeg has no tile/drawtext filters, so ffmpeg only extracts
+// scaled tiles and Chromium lays out the 4x3 sheet with time labels.
+async function writeSheet(browser, videoPath, outputPath, sheet, video) {
   const temporaryDir = await mkdtemp(join(tmpdir(), "frame-sheet-"));
-  let labelsAvailable = true;
   try {
+    const tiles = [];
     for (const [index, timeMs] of sheet.frameTimesMs.entries()) {
       const tilePath = join(temporaryDir, `${String(index).padStart(2, "0")}.png`);
       // Seeking to EOF yields no frame; use the last displayed frame there.
       const seekSeconds = Math.min(timeMs / 1000, Math.max(0, video.durationMs / 1000 - 1 / video.fps));
-      const filters = ["scale=640:-2", "setsar=1"];
-      const label = `drawtext=text='${(timeMs / 1000).toFixed(2)}s':x=10:y=10:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.65`;
-      const extract = async (withLabel) => {
-        await execFileAsync("ffmpeg", [
-          "-hide_banner", "-loglevel", "error", "-y", "-ss", String(seekSeconds), "-i", videoPath,
-          "-frames:v", "1", "-vf", [...filters, ...(withLabel ? [label] : [])].join(","), tilePath,
-        ]);
-        await access(tilePath);
-      };
-      try {
-        await extract(labelsAvailable);
-      } catch (error) {
-        if (!labelsAvailable) throw error;
-        labelsAvailable = false;
-        await extract(false);
-      }
+      await runTool("ffmpeg", [
+        "-hide_banner", "-loglevel", "error", "-y", "-ss", String(seekSeconds), "-i", videoPath,
+        "-frames:v", "1", "-vf", "scale=640:-2", tilePath,
+      ]);
+      const data = await readFile(tilePath);
+      tiles.push({ src: `data:image/png;base64,${data.toString("base64")}`, label: `${(timeMs / 1000).toFixed(2)}s` });
     }
-    await execFileAsync("ffmpeg", [
-      "-hide_banner", "-loglevel", "error", "-y", "-framerate", "1", "-i", join(temporaryDir, "%02d.png"),
-      "-vf", "tile=4x3:nb_frames=12", "-frames:v", "1", outputPath,
-    ]);
+    const page = await browser.newPage({ viewport: { width: 640 * 4, height: 360 }, deviceScaleFactor: 1 });
+    try {
+      await page.setContent(`<!doctype html><style>
+        body{margin:0;background:#000;display:grid;grid-template-columns:repeat(4,640px)}
+        figure{margin:0;position:relative}img{display:block;width:640px}
+        figcaption{position:absolute;left:10px;top:10px;font:24px sans-serif;color:#fff;background:rgba(0,0,0,.65);padding:0 4px}
+      </style>${tiles.map(({ src, label }) => `<figure><img src="${src}"><figcaption>${label}</figcaption></figure>`).join("")}`);
+      await page.screenshot({ path: outputPath, fullPage: true });
+    } finally {
+      await page.close();
+    }
   } finally {
     await rm(temporaryDir, { recursive: true, force: true });
   }
@@ -128,10 +129,16 @@ async function runCli() {
   const sheets = computeFrameSheets(timeline, video.durationMs, video.width, video.height);
   const sheetsDir = resolve(engineRoot, "out/sheets");
   await mkdir(sheetsDir, { recursive: true });
-  for (const [index, sheet] of sheets.entries()) {
-    const outputPath = join(sheetsDir, `${String(index + 1).padStart(2, "0")}-${sheet.kind}.png`);
-    await writeSheet(videoPath, outputPath, sheet, video);
-    console.log(`${outputPath} ${sheet.kind} ${(sheet.startMs / 1000).toFixed(2)}-${(sheet.endMs / 1000).toFixed(2)}s`);
+  const { chromium } = await import("@playwright/test");
+  const browser = await chromium.launch();
+  try {
+    for (const [index, sheet] of sheets.entries()) {
+      const outputPath = join(sheetsDir, `${String(index + 1).padStart(2, "0")}-${sheet.kind}.png`);
+      await writeSheet(browser, videoPath, outputPath, sheet, video);
+      console.log(`${outputPath} ${sheet.kind} ${(sheet.startMs / 1000).toFixed(2)}-${(sheet.endMs / 1000).toFixed(2)}s`);
+    }
+  } finally {
+    await browser.close();
   }
 }
 
