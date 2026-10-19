@@ -72,17 +72,41 @@ function run(command, args, { capture = false } = {}) {
   });
 }
 
+async function writeTestPattern(outputPath) {
+  const { chromium } = await import("@playwright/test");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 1920, height: 1080 },
+      deviceScaleFactor: 1.5,
+    });
+    await page.setContent(`<body style="margin:0;height:100vh;background:
+      repeating-linear-gradient(45deg,#1b2a4a 0 60px,#25406f 60px 120px)">
+      <div style="font:bold 160px sans-serif;color:#fff;padding:120px">
+      record-demo composition proof</div></body>`);
+    await page.screenshot({ path: outputPath });
+  } finally {
+    await browser.close();
+  }
+}
+
 async function main() {
   const timeline = parseTimeline(await readFile(fixturePath, "utf8"));
   const durationSeconds = Math.max(1, timeline.durationMs / 1_000 + 0.5);
   await mkdir(outputDir, { recursive: true });
 
+  // The bundled ffmpeg has no test-pattern sources, so Chromium paints one at
+  // the capture size and ffmpeg loops it.
+  const patternPath = path.join(outputDir, "composition-proof-pattern.png");
+  await writeTestPattern(patternPath);
   await run("ffmpeg", [
     "-y",
-    "-f",
-    "lavfi",
+    "-loop",
+    "1",
+    "-framerate",
+    "60",
     "-i",
-    "testsrc2=size=2880x1620:rate=60",
+    patternPath,
     "-t",
     durationSeconds.toFixed(3),
     "-an",
