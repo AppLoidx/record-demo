@@ -7,7 +7,8 @@ if (nodeMajor < 22) {
 }
 
 const { spawn } = await import("node:child_process");
-const { bundledTool } = await import("../lib/ffmpeg.mjs");
+const { bundledTool, packageCli } = await import("../lib/ffmpeg.mjs");
+const { systemEnv } = await import("../lib/record-env.mjs");
 const {
   mkdir,
   readFile,
@@ -28,22 +29,6 @@ const sourceName = "composition-proof-source.mp4";
 const sourcePath = path.join(publicDir, sourceName);
 const propsPath = path.join(outputDir, "composition-proof-props.json");
 const presets = compositionPresets.map(({ id }) => id);
-
-function systemEnv() {
-  return {
-    HOME: process.env.HOME,
-    LANG: process.env.LANG ?? "C.UTF-8",
-    LOGNAME: process.env.LOGNAME,
-    PATH: `${path.dirname(process.execPath)}:${process.env.PATH ?? "/usr/bin:/bin"}`,
-    SHELL: process.env.SHELL,
-    TERM: process.env.TERM,
-    TMPDIR: process.env.TMPDIR,
-    USER: process.env.USER,
-    XDG_CACHE_HOME: process.env.XDG_CACHE_HOME,
-    XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
-    XDG_DATA_HOME: process.env.XDG_DATA_HOME,
-  };
-}
 
 function run(command, args, { capture = false } = {}) {
   if (command === "ffmpeg" || command === "ffprobe") {
@@ -140,9 +125,7 @@ async function main() {
       outputDir,
       `composition-proof-${preset}.mp4`,
     );
-    await run("pnpm", [
-      "exec",
-      "remotion",
+    await run(...packageCli("@remotion/cli", "remotion", [
       "render",
       "remotion/Root.tsx",
       preset,
@@ -154,7 +137,7 @@ async function main() {
       "--muted",
       "--overwrite",
       "--scale=0.25",
-    ]);
+    ]));
 
     if ((await stat(outputPath)).size === 0) {
       throw new Error(`Composition proof output is empty for ${preset}`);
