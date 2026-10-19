@@ -20,6 +20,6 @@ describe("bundledTool", () => {
   });
 
   it("rejects other tools", () => {
-    expect(() => bundledTool("ffplay", [])).toThrow(/Unsupported/);
+    expect(() => bundledTool("ffplay" as "ffmpeg", [])).toThrow(/Unsupported/);
   });
 });

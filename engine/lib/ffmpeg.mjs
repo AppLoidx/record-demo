@@ -8,6 +8,10 @@ const require = createRequire(import.meta.url);
  * Returns [command, args] that run a package's CLI with the current Node.
  * Spawning Node directly (not a pnpm or .cmd shim) needs no shell, so paths
  * with spaces stay intact on Windows.
+ * @param {string} packageName
+ * @param {string} binName
+ * @param {string[]} args
+ * @returns {[string, string[]]}
  */
 export function packageCli(packageName, binName, args) {
   const packagePath = require.resolve(`${packageName}/package.json`);
@@ -21,7 +25,12 @@ export function packageCli(packageName, binName, args) {
 // platform it renders on. Going through its CLI sets the library path for us,
 // so the engine needs no system ffmpeg. The build is stripped: no fps, tile,
 // drawtext or lavfi sources.
-/** Returns [command, args] that run Remotion's bundled ffmpeg or ffprobe. */
+/**
+ * Returns [command, args] that run Remotion's bundled ffmpeg or ffprobe.
+ * @param {"ffmpeg" | "ffprobe"} tool
+ * @param {string[]} args
+ * @returns {[string, string[]]}
+ */
 export function bundledTool(tool, args) {
   if (tool !== "ffmpeg" && tool !== "ffprobe") {
     throw new Error(`Unsupported bundled tool: ${tool}`);
